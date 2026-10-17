@@ -21,7 +21,7 @@ describe('Home Page Component (WEB-01)', () => {
     renderHome();
 
     // Eyebrow badge
-    expect(screen.getByText(/100% In-Browser Privacy/i)).toBeInTheDocument();
+    expect(screen.getByText(/Privacy-Focused Architecture/i)).toBeInTheDocument();
 
     // Primary H1 heading
     const heading = screen.getByRole('heading', { level: 1 });
@@ -29,7 +29,7 @@ describe('Home Page Component (WEB-01)', () => {
 
     // Value proposition subtitle
     expect(
-      screen.getByText(/Files stay exclusively on your device—zero server uploads, zero storage fees/i)
+      screen.getByText(/without sending your files to remote storage/i)
     ).toBeInTheDocument();
   });
 
@@ -82,7 +82,7 @@ describe('Home Page Component (WEB-01)', () => {
     expect(
       screen.getByRole('heading', { level: 2, name: /Why Use Client-Side PDF Tools\?/i })
     ).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 3, name: /No Server Uploads/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 3, name: /No Remote Storage/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: /No Account Required/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: /Free Core Tools/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: /Fast & Accessible/i })).toBeInTheDocument();

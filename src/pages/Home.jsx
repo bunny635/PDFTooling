@@ -44,7 +44,7 @@ export default function Home() {
           <div className="inline-flex items-center gap-2 mb-6">
             <GlassBadge variant="accent" size="md" className="py-1 px-3.5 shadow-xs">
               <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-              <span>100% In-Browser Privacy</span>
+              <span>Privacy-Focused Architecture</span>
             </GlassBadge>
           </div>
 
@@ -60,8 +60,8 @@ export default function Home() {
 
           {/* Value Proposition Subtitle */}
           <p className="mt-5 text-base sm:text-lg lg:text-xl text-secondary max-w-2xl mx-auto leading-relaxed">
-            Manipulate, reorganize, and convert your PDF documents locally in your browser session. 
-            Files stay exclusively on your device—zero server uploads, zero storage fees.
+            A suite of focused PDF utilities architected for in-browser processing. 
+            Built to handle documents locally without sending your files to remote storage.
           </p>
 
           {/* Dual CTAs */}
@@ -91,15 +91,15 @@ export default function Home() {
             </span>
             <span className="inline-flex items-center gap-1.5">
               <CheckCircle2 className="h-4 w-4 text-status-success" aria-hidden="true" />
-              <span>Zero Server Uploads</span>
+              <span>No Remote Storage</span>
             </span>
             <span className="inline-flex items-center gap-1.5">
               <CheckCircle2 className="h-4 w-4 text-status-success" aria-hidden="true" />
-              <span>100% Free Core Tools</span>
+              <span>Free Core Utilities</span>
             </span>
             <span className="inline-flex items-center gap-1.5">
               <CheckCircle2 className="h-4 w-4 text-status-success" aria-hidden="true" />
-              <span>Local Browser Processing</span>
+              <span>Client-Side Processing Design</span>
             </span>
           </div>
         </div>
@@ -118,7 +118,7 @@ export default function Home() {
               Six Core PDF Operations
             </h2>
             <p className="mt-1 text-sm text-secondary max-w-xl">
-              Select any utility to enter its dedicated browser workspace. Each operation runs locally with zero file transfers.
+              Select any utility to enter its dedicated browser workspace. Designed for private local document workflows.
             </p>
           </div>
 
@@ -191,7 +191,7 @@ export default function Home() {
             How PDFTooling Works
           </h2>
           <p className="mt-2 text-sm text-secondary">
-            Process documents in three straightforward steps. All operations run directly in your browser without cloud uploads.
+            A streamlined workflow designed for local execution within your browser session.
           </p>
         </div>
 
@@ -243,7 +243,7 @@ export default function Home() {
         <div className="mt-6 glass-panel p-4 flex items-center justify-center gap-2.5 text-xs text-secondary text-center">
           <Cpu className="h-4 w-4 text-accent shrink-0" aria-hidden="true" />
           <span>
-            <strong>Client-Side Architecture:</strong> PDFTooling is architected for local browser processing using WebAssembly and client-side APIs. Documents never leave your device.
+            <strong>Client-Side Architecture:</strong> PDFTooling is architected for local browser processing using modern web standards. Core operations are designed to execute directly on your device without server-side file retention.
           </span>
         </div>
       </section>
@@ -258,7 +258,7 @@ export default function Home() {
             Why Use Client-Side PDF Tools?
           </h2>
           <p className="mt-2 text-sm text-secondary">
-            Traditional online PDF converters transmit your sensitive records to remote servers. PDFTooling runs on your device instead.
+            Traditional online PDF services often upload documents to remote servers. PDFTooling focuses on private local browser processing instead.
           </p>
         </div>
 
@@ -268,9 +268,9 @@ export default function Home() {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-status-success/10 text-status-success mb-3">
               <ShieldCheck className="h-5 w-5" aria-hidden="true" />
             </div>
-            <h3 className="font-heading text-sm font-bold text-primary">No Server Uploads</h3>
+            <h3 className="font-heading text-sm font-bold text-primary">No Remote Storage</h3>
             <p className="mt-1.5 text-xs text-secondary leading-relaxed">
-              Your confidential documents never cross the internet or get stored in third-party cloud databases.
+              Documents are handled in your local browser session and are not stored in third-party cloud databases.
             </p>
           </GlassCard>
 
