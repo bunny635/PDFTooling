@@ -60,6 +60,14 @@ describe('GlassCard Component', () => {
     render(<GlassCard interactive data-testid="card">Interactive</GlassCard>);
     expect(screen.getByTestId('card')).toHaveClass('cursor-pointer');
   });
+
+  it('supports custom padding options', () => {
+    const { rerender } = render(<GlassCard padding="none" data-testid="card">Padding None</GlassCard>);
+    expect(screen.getByTestId('card')).toHaveClass('p-0');
+
+    rerender(<GlassCard padding="sm" data-testid="card">Padding SM</GlassCard>);
+    expect(screen.getByTestId('card')).toHaveClass('p-4');
+  });
 });
 
 describe('GlassInput Component', () => {
@@ -92,6 +100,11 @@ describe('GlassBadge Component', () => {
 
     rerender(<GlassBadge variant="accent">Category</GlassBadge>);
     expect(screen.getByText('Category')).toHaveClass('text-accent');
+  });
+
+  it('renders different sizes', () => {
+    render(<GlassBadge size="sm">Small</GlassBadge>);
+    expect(screen.getByText('Small')).toHaveClass('text-[10px]');
   });
 });
 

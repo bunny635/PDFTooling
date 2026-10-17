@@ -56,6 +56,45 @@
   }
 }
 
+/* Universal Upload Dropzone (Liquid Glass) */
+.glass-dropzone {
+  background-color: var(--dropzone-bg);
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-card);
+  transition: all var(--duration-normal) var(--ease-standard);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .glass-dropzone {
+    backdrop-filter: blur(var(--blur-subtle));
+    -webkit-backdrop-filter: blur(var(--blur-subtle));
+  }
+}
+
+.glass-dropzone:hover,
+.glass-dropzone.is-dragging {
+  border-color: var(--accent);
+  background-color: var(--dropzone-bg-active);
+  box-shadow: var(--glass-border-interactive-glow);
+}
+
+/* Ambient Canvas Mesh Gradient - sets depth behind floating glass */
+.bg-ambient-mesh {
+  background-color: var(--bg-canvas);
+  background-image: 
+    radial-gradient(at 0% 0%, var(--mesh-glow-1) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, var(--mesh-glow-2) 0px, transparent 40%),
+    radial-gradient(at 50% 100%, var(--mesh-glow-1) 0px, transparent 50%);
+  background-attachment: fixed;
+}
+
+/* Accent Gradient Text Utility */
+.text-gradient-accent {
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
 /* Dedicated Solid Opaque Surface for Document & PDF Previews */
 /* Ensures strict WCAG 2.2 AA contrast; NEVER translucent behind dense text */
 .surface-opaque,
@@ -86,7 +125,8 @@
   }
   
   .glass-panel,
-  .glass-floating {
+  .glass-floating,
+  .glass-dropzone {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
     background-color: var(--bg-surface) !important;
