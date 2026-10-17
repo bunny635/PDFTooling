@@ -1,12 +1,17 @@
 import React from 'react';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../app/App.jsx';
 import { ThemeProvider } from '../app/providers/ThemeProvider.jsx';
 
 describe('App smoke test', () => {
-  it('renders the application heading, client-side badge, and theme controls', async () => {
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.className = '';
+  });
+
+  it('renders application shell, home route, and interactive theme controls', async () => {
     const user = userEvent.setup();
     render(
       <ThemeProvider>
@@ -14,13 +19,13 @@ describe('App smoke test', () => {
       </ThemeProvider>
     );
 
-    expect(screen.getByRole('heading', { level: 1, name: /PDFTooling/i })).toBeInTheDocument();
-    expect(screen.getByText(/Client-Side Only/i)).toBeInTheDocument();
-    expect(screen.getByText(/Adaptive Liquid Glass/i)).toBeInTheDocument();
-    expect(screen.getByText(/Document Preview Surface/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Explore Foundation/i })).toBeInTheDocument();
+    // Verify Brand, Navigation, and Home Page Content
+    expect(screen.getByRole('link', { name: /PDFTooling/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: /PDFTooling Home/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Browse All Tools/i })).toBeInTheDocument();
+    expect(screen.getByText(/100% Client-Side Processing • No Server Uploads/i)).toBeInTheDocument();
 
-    // Verify theme selector buttons
+    // Verify theme selector controls
     const lightRadio = screen.getByRole('radio', { name: /Light mode/i });
     const darkRadio = screen.getByRole('radio', { name: /Dark mode/i });
     const systemRadio = screen.getByRole('radio', { name: /System mode/i });
