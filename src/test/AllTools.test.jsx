@@ -148,4 +148,13 @@ describe('AllTools Page Component (WEB-02)', () => {
     expect(searchInput).toHaveValue('');
     expect(screen.getByText(/Showing 6 of 6 tools/i)).toBeInTheDocument();
   });
+
+  it('ensures category filter buttons have at least 44px minimum touch target height for mobile accessibility', () => {
+    renderAllTools();
+    const filterButtons = screen.getAllByRole('button', { name: /(All Tools|Organize|Extract|Edit|Convert)/i });
+    expect(filterButtons.length).toBeGreaterThanOrEqual(5);
+    filterButtons.forEach((btn) => {
+      expect(btn).toHaveClass('min-h-[44px]');
+    });
+  });
 });

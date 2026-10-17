@@ -166,7 +166,7 @@ export default function AllTools() {
                 type="button"
                 aria-pressed={isSelected}
                 onClick={() => setSelectedCategory(cat.id)}
-                className={`focus-ring inline-flex items-center rounded-xl px-3.5 py-1.5 text-xs font-medium transition-all duration-200 ${
+                className={`focus-ring inline-flex items-center justify-center min-h-[44px] rounded-xl px-4 py-2 text-xs font-medium transition-all duration-200 select-none ${
                   isSelected
                     ? 'bg-accent text-accent-contrast shadow-sm font-semibold scale-100'
                     : 'glass-floating text-secondary hover:text-primary hover:bg-surface-muted/70'
