@@ -8,24 +8,46 @@ export default {
   theme: {
     extend: {
       colors: {
-        canvas: {
-          light: '#F6F8FF',
-          dark: '#0B1121',
-        },
+        canvas: 'var(--bg-canvas)',
         surface: {
-          light: '#FFFFFF',
-          dark: '#17203B',
+          DEFAULT: 'var(--bg-surface)',
+          muted: 'var(--bg-surface-muted)',
+          opaque: 'var(--bg-surface-opaque)',
         },
-        'surface-muted': {
-          light: '#EEF2FF',
-          dark: '#202B46',
-        },
+        primary: 'var(--text-primary)',
+        secondary: 'var(--text-secondary)',
+        muted: 'var(--text-muted)',
         accent: {
-          DEFAULT: '#6675F5',
-          hover: '#4E60DE',
-          dark: '#91A0FF',
-          'dark-hover': '#B0BAFF',
+          DEFAULT: 'var(--accent)',
+          hover: 'var(--accent-hover)',
+          light: 'var(--accent-light)',
+          contrast: 'var(--accent-contrast)',
         },
+        border: {
+          subtle: 'var(--border-subtle)',
+          strong: 'var(--border-strong)',
+        },
+        status: {
+          success: 'var(--color-success)',
+          warning: 'var(--color-warning)',
+          danger: 'var(--color-danger)',
+        },
+      },
+      fontFamily: {
+        sans: ['var(--font-sans)'],
+        heading: ['var(--font-heading)'],
+      },
+      borderRadius: {
+        card: 'var(--radius-card)',
+        dialog: 'var(--radius-dialog)',
+      },
+      boxShadow: {
+        glass: 'var(--glass-shadow)',
+      },
+      backdropBlur: {
+        subtle: 'var(--blur-subtle)',
+        moderate: 'var(--blur-moderate)',
+        strong: 'var(--blur-strong)',
       },
     },
   },

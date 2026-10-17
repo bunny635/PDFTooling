@@ -1,0 +1,94 @@
+/* Adaptive Liquid Glass Surface Utilities & Fallbacks */
+
+/* G1: Base Card Glass */
+.glass-panel {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--glass-shadow);
+  border-radius: var(--radius-card);
+  transition: transform var(--duration-fast) var(--ease-standard),
+              box-shadow var(--duration-fast) var(--ease-standard),
+              border-color var(--duration-fast) var(--ease-standard);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .glass-panel {
+    background-color: var(--glass-fill);
+    border-color: var(--glass-border);
+    backdrop-filter: blur(var(--blur-subtle));
+    -webkit-backdrop-filter: blur(var(--blur-subtle));
+    box-shadow: var(--glass-shadow), var(--glass-highlight);
+  }
+}
+
+/* G2: Floating Controls & Navigation Glass */
+.glass-floating {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--glass-shadow);
+  border-radius: var(--radius-md);
+  transition: all var(--duration-fast) var(--ease-standard);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .glass-floating {
+    background-color: var(--glass-fill);
+    border-color: var(--glass-border);
+    backdrop-filter: blur(var(--blur-moderate));
+    -webkit-backdrop-filter: blur(var(--blur-moderate));
+    box-shadow: var(--glass-shadow), var(--glass-highlight);
+  }
+}
+
+/* Glass Pill (Badges, Chips) */
+.glass-pill {
+  border-radius: var(--radius-pill);
+  background-color: var(--bg-surface-muted);
+  border: 1px solid var(--border-subtle);
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .glass-pill {
+    background-color: var(--glass-fill);
+    border-color: var(--glass-border-subtle);
+    backdrop-filter: blur(var(--blur-subtle));
+    -webkit-backdrop-filter: blur(var(--blur-subtle));
+  }
+}
+
+/* Dedicated Solid Opaque Surface for Document & PDF Previews */
+/* Ensures strict WCAG 2.2 AA contrast; NEVER translucent behind dense text */
+.surface-opaque,
+.pdf-preview-surface {
+  background-color: var(--bg-surface-opaque) !important;
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Accessible Focus Ring */
+:focus-visible,
+.focus-ring:focus-visible {
+  outline: none !important;
+  box-shadow: var(--focus-ring) !important;
+}
+
+/* Motion Preferences */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  
+  .glass-panel,
+  .glass-floating {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background-color: var(--bg-surface) !important;
+  }
+}

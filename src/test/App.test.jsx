@@ -8,5 +8,8 @@ describe('App smoke test', () => {
     render(<App />);
     expect(screen.getByRole('heading', { level: 1, name: /PDFTooling/i })).toBeInTheDocument();
     expect(screen.getByText(/Client-Side Only/i)).toBeInTheDocument();
+    expect(screen.getByText(/Adaptive Liquid Glass/i)).toBeInTheDocument();
+    expect(screen.getByText(/Document Preview Surface/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Explore Foundation/i })).toBeInTheDocument();
   });
 });
