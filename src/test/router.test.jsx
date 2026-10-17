@@ -74,6 +74,13 @@ describe('Application Routing and Shell', () => {
     expect(screen.getByRole('link', { name: /Go Home/i })).toBeInTheDocument();
   });
 
+  it('renders 404 Not Found for non-existent tool slugs (/tools/nonexistent)', () => {
+    renderRoute('/tools/nonexistent');
+    expect(screen.getByRole('heading', { level: 1, name: '404' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: /Page Not Found/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /All Tools/i }).length).toBeGreaterThanOrEqual(1);
+  });
+
   it('persists theme switching across route changes', async () => {
     const user = userEvent.setup();
     renderRoute('/');

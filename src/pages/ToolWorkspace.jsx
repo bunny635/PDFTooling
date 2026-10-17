@@ -2,6 +2,7 @@ import React from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { Layers, Shield, FileCheck, ArrowLeft } from 'lucide-react';
 import { getToolBySlug } from '../config/toolRegistry.js';
+import NotFound from './NotFound.jsx';
 
 export default function ToolWorkspace({ slugOverride }) {
   const { slug } = useParams();
@@ -9,23 +10,7 @@ export default function ToolWorkspace({ slugOverride }) {
   const tool = getToolBySlug(activeSlug);
 
   if (!tool) {
-    return (
-      <div className="py-12 text-center">
-        <h1 className="font-heading text-2xl font-bold text-primary">
-          Tool Not Found
-        </h1>
-        <p className="mt-2 text-sm text-secondary">
-          The requested tool "{activeSlug}" is not recognized.
-        </p>
-        <Link
-          to="/tools"
-          className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-accent hover:underline"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          <span>Back to All Tools</span>
-        </Link>
-      </div>
-    );
+    return <NotFound />;
   }
 
   return (
