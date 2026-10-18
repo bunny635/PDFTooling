@@ -31,10 +31,13 @@ export const PROCESSOR_REGISTRY = Object.freeze({
   'rotate-pdf': Object.freeze({
     id: 'rotate-pdf',
     name: 'Rotate PDF',
-    isAvailable: false,
-    status: 'unavailable',
-    reason: 'Processing engine scheduled for implementation in upcoming ticket.',
-    execute: null,
+    isAvailable: true,
+    status: 'available',
+    reason: 'Pure client-side in-memory PDF page rotation engine.',
+    execute: async (params) => {
+      const { rotatePdf } = await import('../processors/rotatePdf.js');
+      return rotatePdf(params);
+    },
   }),
   'delete-pages': Object.freeze({
     id: 'delete-pages',

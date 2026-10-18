@@ -6,6 +6,7 @@ describe('useToolProcessor Hook', () => {
   const mergeTool = { id: 'merge-pdf', slug: 'merge-pdf', name: 'Merge PDF', minFiles: 2 };
   const splitTool = { id: 'split-pdf', slug: 'split-pdf', name: 'Split PDF', minFiles: 1 };
   const rotateTool = { id: 'rotate-pdf', slug: 'rotate-pdf', name: 'Rotate PDF', minFiles: 1 };
+  const deleteTool = { id: 'delete-pages', slug: 'delete-pages', name: 'Delete Pages', minFiles: 1 };
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -68,7 +69,7 @@ describe('useToolProcessor Hook', () => {
     expect(result.current.status).toBe('ready');
   });
 
-  it('confirms unavailable tools meet input requirements with files but cannot process', () => {
+  it('confirms Rotate PDF with one valid file is available in production', () => {
     const mockFiles = [
       new File(['single'], 'document.pdf', { type: 'application/pdf' }),
     ];
@@ -76,6 +77,25 @@ describe('useToolProcessor Hook', () => {
     const { result } = renderHook(() =>
       useToolProcessor({
         tool: rotateTool,
+        files: mockFiles,
+      })
+    );
+
+    expect(result.current.hasRequiredInputs).toBe(true);
+    expect(result.current.minFiles).toBe(1);
+    expect(result.current.isProcessorAvailable).toBe(true);
+    expect(result.current.canProcess).toBe(true);
+    expect(result.current.status).toBe('ready');
+  });
+
+  it('confirms unavailable tools meet input requirements with files but cannot process', () => {
+    const mockFiles = [
+      new File(['single'], 'document.pdf', { type: 'application/pdf' }),
+    ];
+
+    const { result } = renderHook(() =>
+      useToolProcessor({
+        tool: deleteTool,
         files: mockFiles,
       })
     );
@@ -94,7 +114,7 @@ describe('useToolProcessor Hook', () => {
 
     const { result } = renderHook(() =>
       useToolProcessor({
-        tool: rotateTool, // Unavailable in production
+        tool: deleteTool, // Unavailable in production
         files: mockFiles,
       })
     );

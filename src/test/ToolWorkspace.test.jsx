@@ -375,17 +375,17 @@ describe('ToolWorkspace Component', () => {
     });
 
     it('keeps action button disabled and shows placeholder for unavailable tools even with valid input', async () => {
-      const { user } = renderWorkspace('/tools/rotate-pdf');
+      const { user } = renderWorkspace('/tools/delete-pages');
 
       // Upload valid file to single-file tool (input satisfied)
       const file = new File(['content'], 'sample.pdf', { type: 'application/pdf', lastModified: 1710000000205 });
-      await user.upload(screen.getByLabelText(/Select file for Rotate PDF/i), file);
+      await user.upload(screen.getByLabelText(/Select file for Delete Pages/i), file);
 
-      // Input requirements satisfied, but rotate-pdf processor is unavailable in prod
+      // Input requirements satisfied, but delete-pages processor is unavailable in prod
       expect(
         screen.getByText(/1 file loaded .* Ready for client-side processing\./i)
       ).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Rotate PDF/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Delete Pages/i })).toBeDisabled();
       expect(screen.getByText(/Processing Engine Placeholder/i)).toBeInTheDocument();
     });
 
@@ -605,7 +605,7 @@ describe('ToolWorkspace Component', () => {
       });
 
       const mockAdapter = {
-        id: 'rotate-pdf',
+        id: 'delete-pages',
         isAvailable: true,
         execute: vi.fn().mockImplementation(() => delayedPromise),
       };
@@ -613,17 +613,17 @@ describe('ToolWorkspace Component', () => {
       render(
         <ThemeProvider>
           <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <ToolWorkspace slugOverride="rotate-pdf" processorAdapterOverride={mockAdapter} />
+            <ToolWorkspace slugOverride="delete-pages" processorAdapterOverride={mockAdapter} />
           </MemoryRouter>
         </ThemeProvider>
       );
 
       const file = new File(['source'], 'original.pdf', { type: 'application/pdf', lastModified: 1710000000210 });
-      const fileInput = screen.getByLabelText(/Select file for Rotate PDF/i);
+      const fileInput = screen.getByLabelText(/Select file for Delete Pages/i);
       await user.upload(fileInput, file);
 
       // Action button should now be enabled because processor is available and input is ready
-      const processButton = screen.getByRole('button', { name: /Rotate PDF/i });
+      const processButton = screen.getByRole('button', { name: /Delete Pages/i });
       expect(processButton).not.toBeDisabled();
 
       // Click to start processing
@@ -640,15 +640,15 @@ describe('ToolWorkspace Component', () => {
       await act(async () => {
         resolveMock({
           blob: outputBlob,
-          suggestedFilename: 'rotated.pdf',
+          suggestedFilename: 'deleted.pdf',
           mimeType: 'application/pdf',
         });
       });
 
       // Successful completion: Download banner appears
       expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
-      expect(screen.getAllByText(/rotated\.pdf/i).length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByRole('button', { name: /Download rotated\.pdf/i })).toBeInTheDocument();
+      expect(screen.getAllByText(/deleted\.pdf/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByRole('button', { name: /Download deleted\.pdf/i })).toBeInTheDocument();
 
       // Clear all resets state and removes download card
       await user.click(screen.getByRole('button', { name: /Clear All/i }));
@@ -658,7 +658,7 @@ describe('ToolWorkspace Component', () => {
     it('displays accessible error banner on processor failure and allows dismissal', async () => {
       const user = userEvent.setup();
       const mockAdapter = {
-        id: 'rotate-pdf',
+        id: 'delete-pages',
         isAvailable: true,
         execute: vi.fn().mockRejectedValue(new Error('Corrupt PDF trailer syntax.')),
       };
@@ -666,15 +666,15 @@ describe('ToolWorkspace Component', () => {
       render(
         <ThemeProvider>
           <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <ToolWorkspace slugOverride="rotate-pdf" processorAdapterOverride={mockAdapter} />
+            <ToolWorkspace slugOverride="delete-pages" processorAdapterOverride={mockAdapter} />
           </MemoryRouter>
         </ThemeProvider>
       );
 
       const file = new File(['bad'], 'corrupt.pdf', { type: 'application/pdf', lastModified: 1710000000220 });
-      await user.upload(screen.getByLabelText(/Select file for Rotate PDF/i), file);
+      await user.upload(screen.getByLabelText(/Select file for Delete Pages/i), file);
 
-      const actionButton = screen.getByRole('button', { name: /Rotate PDF/i });
+      const actionButton = screen.getByRole('button', { name: /Delete Pages/i });
       expect(actionButton).not.toBeDisabled();
 
       await user.click(actionButton);
@@ -687,6 +687,163 @@ describe('ToolWorkspace Component', () => {
       // Dismissing error clears the banner
       await user.click(screen.getByRole('button', { name: /Dismiss/i }));
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('PDF-03 Rotate PDF Workspace Integration', () => {
+    it('renders rotation controls and defaults to 90 degrees and all pages', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="rotate-pdf" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const doc = await PDFDocument.create();
+      doc.addPage([100, 100]);
+      const file = new File([await doc.save()], 'one-page.pdf', { type: 'application/pdf', lastModified: 1710000000300 });
+
+      await user.upload(screen.getByLabelText(/Select file for Rotate PDF/i), file);
+      await waitFor(() => {
+        expect(screen.getByText(/1 Page Total/i)).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('heading', { level: 3, name: /Rotate Options/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Rotate 90° Clockwise/i })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: /Rotate 180° Flip/i })).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.getByRole('button', { name: /Rotate 270° Clockwise/i })).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.getByRole('button', { name: /All Pages/i })).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByRole('button', { name: /Selected Pages/i })).toHaveAttribute('aria-pressed', 'false');
+      expect(screen.queryByLabelText(/Pages to Rotate/i)).not.toBeInTheDocument();
+    });
+
+    it('inspects page count, rotates all pages by 90 degrees, and allows download', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="rotate-pdf" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const doc = await PDFDocument.create();
+      doc.addPage([200, 200]);
+      doc.addPage([200, 200]);
+      doc.addPage([200, 200]);
+      const pdfBytes = await doc.save();
+      const file = new File([pdfBytes], 'three-pages.pdf', { type: 'application/pdf', lastModified: 1710000000300 });
+
+      const fileInput = screen.getByLabelText(/Select file for Rotate PDF/i);
+      await user.upload(fileInput, file);
+
+      // Verify page count inspection
+      await waitFor(() => {
+        expect(screen.getByText(/3 Pages Total/i)).toBeInTheDocument();
+      });
+
+      const rotateButton = screen.getByRole('button', { name: /Rotate PDF/i });
+      expect(rotateButton).not.toBeDisabled();
+
+      // Trigger rotate
+      await user.click(rotateButton);
+
+      // Verify download card
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
+      });
+      expect(screen.getByRole('button', { name: /Download rotated\.pdf/i })).toBeInTheDocument();
+    });
+
+    it('rotates selected pages and updates page selection badge', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="rotate-pdf" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const doc = await PDFDocument.create();
+      doc.addPage([200, 200]);
+      doc.addPage([200, 200]);
+      doc.addPage([200, 200]);
+      const file = new File([await doc.save()], 'select-rotate.pdf', { type: 'application/pdf', lastModified: 1710000000301 });
+
+      await user.upload(screen.getByLabelText(/Select file for Rotate PDF/i), file);
+      await waitFor(() => {
+        expect(screen.getByText(/3 Pages Total/i)).toBeInTheDocument();
+      });
+
+      // Switch to selected pages
+      const selectedScopeBtn = screen.getByRole('button', { name: /Selected Pages/i });
+      await user.click(selectedScopeBtn);
+      expect(selectedScopeBtn).toHaveAttribute('aria-pressed', 'true');
+
+      // Now the page range input appears
+      const rangeInput = screen.getByLabelText(/Pages to Rotate/i);
+      expect(rangeInput).toBeInTheDocument();
+
+      // Action button should be disabled because range input is empty
+      const rotateButton = screen.getByRole('button', { name: /Rotate PDF/i });
+      expect(rotateButton).toBeDisabled();
+
+      // Type page 2
+      await user.type(rangeInput, '2');
+      expect(screen.getByText(/Selected 1 page: 2/i)).toBeInTheDocument();
+      expect(rotateButton).not.toBeDisabled();
+
+      // Click 180 degrees
+      await user.click(screen.getByRole('button', { name: /Rotate 180° Flip/i }));
+
+      // Execute rotation
+      await user.click(rotateButton);
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
+      });
+      expect(screen.getByRole('button', { name: /Download rotated\.pdf/i })).toBeInTheDocument();
+    });
+
+    it('does not invalidate download output on inactive pageSelection changes when scope is all pages, but invalidates on angle change', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="rotate-pdf" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const doc = await PDFDocument.create();
+      doc.addPage([200, 200]);
+      const file = new File([await doc.save()], 'invalidation-test.pdf', { type: 'application/pdf', lastModified: 1710000000302 });
+
+      await user.upload(screen.getByLabelText(/Select file for Rotate PDF/i), file);
+      await waitFor(() => {
+        expect(screen.getByText(/1 Page Total/i)).toBeInTheDocument();
+      });
+
+      // Step 1: Switch to selected, type a range, then switch back to 'all'
+      await user.click(screen.getByRole('button', { name: /Selected Pages/i }));
+      const rangeInput = screen.getByLabelText(/Pages to Rotate/i);
+      await user.type(rangeInput, '1');
+
+      // Switch back to 'all'
+      await user.click(screen.getByRole('button', { name: /All Pages/i }));
+
+      // Execute rotation for all pages
+      await user.click(screen.getByRole('button', { name: /Rotate PDF/i }));
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
+      });
+
+      // Changing angle invalidates output
+      await user.click(screen.getByRole('button', { name: /Rotate 180° Flip/i }));
+      expect(screen.queryByRole('heading', { level: 2, name: /Ready for Download/i })).not.toBeInTheDocument();
     });
   });
 

@@ -14,7 +14,7 @@ describe('processorRegistry', () => {
     });
   });
 
-  it('marks merge-pdf and split-pdf as available and the remaining four MVP tools as unavailable in production', () => {
+  it('marks merge-pdf, split-pdf, and rotate-pdf as available and the remaining three MVP tools as unavailable in production', () => {
     // 1. Merge PDF is active and functional
     const mergeProc = getToolProcessor('merge-pdf');
     expect(mergeProc).toBeDefined();
@@ -33,8 +33,17 @@ describe('processorRegistry', () => {
     expect(typeof splitProc.execute).toBe('function');
     expect(isProcessorAvailable('split-pdf')).toBe(true);
 
-    // 3. The remaining four tools remain unavailable placeholders
-    const unavailableSlugs = ['rotate-pdf', 'delete-pages', 'reorder-pages', 'jpg-to-pdf'];
+    // 3. Rotate PDF is active and functional
+    const rotateProc = getToolProcessor('rotate-pdf');
+    expect(rotateProc).toBeDefined();
+    expect(rotateProc.id).toBe('rotate-pdf');
+    expect(rotateProc.isAvailable).toBe(true);
+    expect(rotateProc.status).toBe('available');
+    expect(typeof rotateProc.execute).toBe('function');
+    expect(isProcessorAvailable('rotate-pdf')).toBe(true);
+
+    // 4. The remaining three tools remain unavailable placeholders
+    const unavailableSlugs = ['delete-pages', 'reorder-pages', 'jpg-to-pdf'];
     unavailableSlugs.forEach((slug) => {
       const proc = getToolProcessor(slug);
       expect(proc).toBeDefined();
@@ -56,24 +65,24 @@ describe('processorRegistry', () => {
   it('supports dependency-injected test adapters without mutating the production registry', () => {
     const mockExecute = async () => ({ blob: new Blob(['mock']), suggestedFilename: 'mock.pdf' });
     const customAdapters = {
-      'rotate-pdf': {
-        id: 'rotate-pdf',
+      'delete-pages': {
+        id: 'delete-pages',
         isAvailable: true,
         execute: mockExecute,
       },
     };
 
     // With injected adapter
-    const injected = getToolProcessor('rotate-pdf', customAdapters);
+    const injected = getToolProcessor('delete-pages', customAdapters);
     expect(injected.isAvailable).toBe(true);
     expect(injected.execute).toBe(mockExecute);
-    expect(isProcessorAvailable('rotate-pdf', customAdapters)).toBe(true);
+    expect(isProcessorAvailable('delete-pages', customAdapters)).toBe(true);
 
-    // Production registry remains unaltered (rotate-pdf is still unavailable in prod)
-    const prod = getToolProcessor('rotate-pdf');
+    // Production registry remains unaltered (delete-pages is still unavailable in prod)
+    const prod = getToolProcessor('delete-pages');
     expect(prod.isAvailable).toBe(false);
     expect(prod.execute).toBeNull();
-    expect(isProcessorAvailable('rotate-pdf')).toBe(false);
+    expect(isProcessorAvailable('delete-pages')).toBe(false);
   });
 
   it('lazily loads and executes mergePdf upon execute invocation', async () => {
@@ -92,6 +101,16 @@ describe('processorRegistry', () => {
 
     // Calling execute dynamically imports splitPdf and enforces its contract
     await expect(splitProc.execute({ files: [] })).rejects.toThrow(
+      /requires exactly one source document/i
+    );
+  });
+
+  it('lazily loads and executes rotatePdf upon execute invocation', async () => {
+    const rotateProc = getToolProcessor('rotate-pdf');
+    expect(typeof rotateProc.execute).toBe('function');
+
+    // Calling execute dynamically imports rotatePdf and enforces its contract
+    await expect(rotateProc.execute({ files: [] })).rejects.toThrow(
       /requires exactly one source document/i
     );
   });

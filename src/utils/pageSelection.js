@@ -33,7 +33,7 @@ export function parsePageRange(rangeStr, totalPages) {
   if (typeof rangeStr !== 'string' || !rangeStr.trim()) {
     return {
       valid: false,
-      error: 'Please enter page numbers or ranges to extract (e.g. 1-3, 5).',
+      error: 'Please enter page numbers or ranges (e.g. 1-3, 5).',
     };
   }
 

@@ -85,11 +85,15 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
   const [alerts, setAlerts] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Split PDF specific states
+  // Page-level and single-file tool specific states (Split, Rotate)
   const [pageSelection, setPageSelection] = useState('');
   const [sourcePageCount, setSourcePageCount] = useState(null);
   const [isInspecting, setIsInspecting] = useState(false);
   const [inspectionError, setInspectionError] = useState(null);
+
+  // Rotate PDF specific options
+  const [rotationAngle, setRotationAngle] = useState(90);
+  const [rotationScope, setRotationScope] = useState('all');
 
   const fileInputRef = useRef(null);
   const dragCounterRef = useRef(0);
@@ -97,6 +101,8 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
   const inspectionAbortRef = useRef(null);
 
   const isSplitTool = tool.id === 'split-pdf';
+  const isRotateTool = tool.id === 'rotate-pdf';
+  const needsPageInspection = isSplitTool || isRotateTool;
 
   // Prevent browser default navigation when files are accidentally dropped outside the dropzone
   useEffect(() => {
@@ -121,9 +127,9 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
     };
   }, []);
 
-  // Inspect page count asynchronously for Split PDF without eager bundle bloat
+  // Inspect page count asynchronously for single-file PDF tools (Split, Rotate) without eager bundle bloat
   useEffect(() => {
-    if (!isSplitTool) return;
+    if (!needsPageInspection) return;
 
     inspectionTokenRef.current += 1;
     const currentToken = inspectionTokenRef.current;
@@ -169,23 +175,44 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
       inspectionTokenRef.current += 1;
       controller.abort();
     };
-  }, [isSplitTool, selectedFiles]);
+  }, [needsPageInspection, selectedFiles]);
 
   // Validate human-entered page selection against inspected page count
   const rangeResult = useMemo(() => {
-    if (!isSplitTool || sourcePageCount === null) return null;
+    if ((!isSplitTool && (!isRotateTool || rotationScope !== 'selected')) || sourcePageCount === null) {
+      return null;
+    }
     return parsePageRange(pageSelection, sourcePageCount);
-  }, [isSplitTool, pageSelection, sourcePageCount]);
+  }, [isSplitTool, isRotateTool, rotationScope, pageSelection, sourcePageCount]);
 
   const isOptionsValid = useMemo(() => {
-    if (!isSplitTool) return true;
-    return Boolean(sourcePageCount !== null && rangeResult?.valid);
-  }, [isSplitTool, sourcePageCount, rangeResult]);
+    if (isSplitTool) {
+      return Boolean(sourcePageCount !== null && rangeResult?.valid);
+    }
+    if (isRotateTool) {
+      const isAngleValid = [90, 180, 270].includes(rotationAngle);
+      if (!isAngleValid || sourcePageCount === null) return false;
+      if (rotationScope === 'all') return true;
+      return Boolean(rangeResult?.valid);
+    }
+    return true;
+  }, [isSplitTool, isRotateTool, sourcePageCount, rangeResult, rotationAngle, rotationScope]);
 
+  // When scope is All pages, exclude the inactive page-selection value from effective processing options
+  // so that hidden input changes do not unnecessarily invalidate results.
   const processorOptions = useMemo(() => {
-    if (!isSplitTool) return undefined;
-    return { pageSelection };
-  }, [isSplitTool, pageSelection]);
+    if (isSplitTool) {
+      return { pageSelection };
+    }
+    if (isRotateTool) {
+      return {
+        angle: rotationAngle,
+        scope: rotationScope,
+        ...(rotationScope === 'selected' ? { pageSelection } : {}),
+      };
+    }
+    return undefined;
+  }, [isSplitTool, isRotateTool, pageSelection, rotationAngle, rotationScope]);
 
   // Hook managing processing lifecycle (idle, ready, processing, success, error)
   const {
@@ -261,9 +288,13 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
         const chosenFile = validNewFiles[0];
         setSelectedFiles([chosenFile]);
 
-        if (isSplitTool) {
+        if (needsPageInspection) {
           setPageSelection('');
           setInspectionError(null);
+          if (isRotateTool) {
+            setRotationAngle(90);
+            setRotationScope('all');
+          }
         }
 
         if (selectedFiles.length > 0) {
@@ -345,10 +376,14 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
   const handleRemoveFile = (indexToRemove) => {
     if (isProcessing) return;
     setSelectedFiles((prev) => prev.filter((_, idx) => idx !== indexToRemove));
-    if (isSplitTool) {
+    if (needsPageInspection) {
       setPageSelection('');
       setSourcePageCount(null);
       setInspectionError(null);
+      if (isRotateTool) {
+        setRotationAngle(90);
+        setRotationScope('all');
+      }
     }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -359,10 +394,14 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
     if (isProcessing) return;
     setSelectedFiles([]);
     setAlerts([]);
-    if (isSplitTool) {
+    if (needsPageInspection) {
       setPageSelection('');
       setSourcePageCount(null);
       setInspectionError(null);
+      if (isRotateTool) {
+        setRotationAngle(90);
+        setRotationScope('all');
+      }
     }
     resetProcessing();
     if (fileInputRef.current) {
@@ -729,6 +768,137 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
         </div>
       )}
 
+      {/* Rotate PDF Configuration */}
+      {isRotateTool && selectedFiles.length === 1 && (
+        <div className="glass-panel p-5 sm:p-6 mt-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 className="font-heading text-sm sm:text-base font-bold text-primary">
+                Rotate Options
+              </h3>
+              <p className="text-xs text-secondary mt-0.5">
+                Choose rotation angle and specify target pages.
+              </p>
+            </div>
+            {isInspecting ? (
+              <span className="glass-pill px-3 py-1 text-xs text-accent flex items-center gap-1.5 self-start sm:self-auto">
+                <span className="h-3 w-3 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+                Inspecting pages...
+              </span>
+            ) : sourcePageCount !== null ? (
+              <GlassBadge variant="accent" size="md" className="self-start sm:self-auto">
+                {sourcePageCount} {sourcePageCount === 1 ? 'Page' : 'Pages'} Total
+              </GlassBadge>
+            ) : null}
+          </div>
+
+          {inspectionError ? (
+            <div className="p-3.5 rounded-xl border border-status-danger/30 bg-status-danger/10 text-status-danger text-xs sm:text-sm flex items-start gap-2.5">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+              <span>{inspectionError}</span>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {/* Angle Selector */}
+              <div>
+                <label className="mb-2 block font-heading text-xs font-semibold text-primary">
+                  Rotation Angle
+                </label>
+                <div className="grid grid-cols-3 gap-2.5">
+                  {[
+                    { angle: 90, label: '90° Clockwise' },
+                    { angle: 180, label: '180° Flip' },
+                    { angle: 270, label: '270° Clockwise' },
+                  ].map(({ angle, label }) => {
+                    const isSelected = rotationAngle === angle;
+                    return (
+                      <button
+                        key={angle}
+                        type="button"
+                        disabled={isProcessing || isInspecting || sourcePageCount === null}
+                        onClick={() => setRotationAngle(angle)}
+                        aria-pressed={isSelected}
+                        aria-label={`Rotate ${label}`}
+                        className={`flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all focus-ring ${
+                          isSelected
+                            ? 'bg-accent text-accent-contrast shadow-sm ring-1 ring-accent'
+                            : 'surface-glass text-secondary hover:text-primary hover:bg-surface-hover/80 border border-border-subtle'
+                        } ${isProcessing || isInspecting || sourcePageCount === null ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        <RotateCw
+                          className={`h-3.5 w-3.5 ${
+                            angle === 180 ? 'rotate-90' : angle === 270 ? 'rotate-180' : ''
+                          }`}
+                          aria-hidden="true"
+                        />
+                        <span>{label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Scope Selector */}
+              <div>
+                <label className="mb-2 block font-heading text-xs font-semibold text-primary">
+                  Rotation Scope
+                </label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {[
+                    { scope: 'all', label: 'All Pages' },
+                    { scope: 'selected', label: 'Selected Pages' },
+                  ].map(({ scope, label }) => {
+                    const isSelected = rotationScope === scope;
+                    return (
+                      <button
+                        key={scope}
+                        type="button"
+                        disabled={isProcessing || isInspecting || sourcePageCount === null}
+                        onClick={() => setRotationScope(scope)}
+                        aria-pressed={isSelected}
+                        className={`px-3 py-2.5 rounded-xl text-xs sm:text-sm font-semibold transition-all focus-ring ${
+                          isSelected
+                            ? 'bg-accent text-accent-contrast shadow-sm ring-1 ring-accent'
+                            : 'surface-glass text-secondary hover:text-primary hover:bg-surface-hover/80 border border-border-subtle'
+                        } ${isProcessing || isInspecting || sourcePageCount === null ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Conditional Page Selection Input for Selected Pages Scope */}
+              {rotationScope === 'selected' && (
+                <div>
+                  <GlassInput
+                    id="rotate-page-selection"
+                    label="Pages to Rotate"
+                    placeholder="e.g. 1-3, 5, 8-10"
+                    value={pageSelection}
+                    disabled={isProcessing || isInspecting || sourcePageCount === null}
+                    onChange={(e) => setPageSelection(e.target.value)}
+                    helperText={
+                      rangeResult?.valid
+                        ? `Selected ${rangeResult.pageIndices.length} ${
+                            rangeResult.pageIndices.length === 1 ? 'page' : 'pages'
+                          }: ${rangeResult.pageIndices.map((i) => i + 1).join(', ')}`
+                        : 'Enter page numbers and/or ranges to rotate (e.g. 1-3, 5, 8-10).'
+                    }
+                    error={
+                      pageSelection.trim().length > 0 && !rangeResult?.valid
+                        ? rangeResult?.error
+                        : undefined
+                    }
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Action Dock / Processing Section */}
       <div className="glass-panel p-6 sm:p-8 mt-8 border-t border-border-subtle">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -757,6 +927,18 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
                   : `Extracting ${rangeResult.pageIndices.length} ${
                       rangeResult.pageIndices.length === 1 ? 'page' : 'pages'
                     } in document order. Ready for client-side processing.`
+                : isRotateTool
+                ? isInspecting
+                  ? 'Inspecting document pages in local sandbox...'
+                  : inspectionError
+                  ? 'Cannot process: source document has inspection errors.'
+                  : rotationScope === 'selected' && !pageSelection.trim()
+                  ? 'Enter the pages you want to rotate above.'
+                  : rotationScope === 'selected' && !rangeResult?.valid
+                  ? 'Please correct the page selection above.'
+                  : rotationScope === 'all'
+                  ? `Rotating all ${sourcePageCount || ''} pages by ${rotationAngle}° clockwise. Ready for client-side processing.`
+                  : `Rotating ${rangeResult?.pageIndices?.length || 0} selected pages by ${rotationAngle}° clockwise. Ready for client-side processing.`
                 : `${selectedFiles.length} ${
                     selectedFiles.length === 1 ? 'file' : 'files'
                   } loaded (${formatFileSize(totalSize)}). Ready for client-side processing.`}
