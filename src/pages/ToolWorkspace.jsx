@@ -519,6 +519,14 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
             </GlassButton>
           </div>
 
+          {/* Merge PDF File Ordering Notice */}
+          {tool.id === 'merge-pdf' && (
+            <p className="text-xs text-secondary mb-3.5 flex items-center gap-1.5 font-medium">
+              <Info className="h-3.5 w-3.5 text-accent shrink-0" aria-hidden="true" />
+              <span>PDFs will be merged in the order shown below.</span>
+            </p>
+          )}
+
           <div className="space-y-2.5">
             {selectedFiles.map((file, idx) => {
               const fileExt = (file.name.split('.').pop() || 'FILE').toUpperCase();

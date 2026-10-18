@@ -10,3 +10,19 @@ if (typeof URL !== 'undefined') {
     URL.revokeObjectURL = vi.fn();
   }
 }
+
+// Provide Blob/File.prototype.arrayBuffer polyfill for jsdom environment using FileReader
+if (typeof Blob !== 'undefined' && typeof Blob.prototype.arrayBuffer !== 'function') {
+  Blob.prototype.arrayBuffer = function () {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error('FileReader failed'));
+      reader.readAsArrayBuffer(this);
+    });
+  };
+}
+if (typeof File !== 'undefined' && typeof File.prototype.arrayBuffer !== 'function') {
+  File.prototype.arrayBuffer = Blob.prototype.arrayBuffer;
+}
+

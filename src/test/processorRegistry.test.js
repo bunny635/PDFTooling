@@ -14,10 +14,19 @@ describe('processorRegistry', () => {
     });
   });
 
-  it('marks all six MVP tools as unavailable in production', () => {
-    const slugs = ['merge-pdf', 'split-pdf', 'rotate-pdf', 'delete-pages', 'reorder-pages', 'jpg-to-pdf'];
+  it('marks merge-pdf as available and the remaining five MVP tools as unavailable in production', () => {
+    // 1. Merge PDF is active and functional
+    const mergeProc = getToolProcessor('merge-pdf');
+    expect(mergeProc).toBeDefined();
+    expect(mergeProc.id).toBe('merge-pdf');
+    expect(mergeProc.isAvailable).toBe(true);
+    expect(mergeProc.status).toBe('available');
+    expect(typeof mergeProc.execute).toBe('function');
+    expect(isProcessorAvailable('merge-pdf')).toBe(true);
 
-    slugs.forEach((slug) => {
+    // 2. The remaining five tools remain unavailable placeholders
+    const unavailableSlugs = ['split-pdf', 'rotate-pdf', 'delete-pages', 'reorder-pages', 'jpg-to-pdf'];
+    unavailableSlugs.forEach((slug) => {
       const proc = getToolProcessor(slug);
       expect(proc).toBeDefined();
       expect(proc.id).toBe(slug);
@@ -38,23 +47,23 @@ describe('processorRegistry', () => {
   it('supports dependency-injected test adapters without mutating the production registry', () => {
     const mockExecute = async () => ({ blob: new Blob(['mock']), suggestedFilename: 'mock.pdf' });
     const customAdapters = {
-      'merge-pdf': {
-        id: 'merge-pdf',
+      'split-pdf': {
+        id: 'split-pdf',
         isAvailable: true,
         execute: mockExecute,
       },
     };
 
     // With injected adapter
-    const injected = getToolProcessor('merge-pdf', customAdapters);
+    const injected = getToolProcessor('split-pdf', customAdapters);
     expect(injected.isAvailable).toBe(true);
     expect(injected.execute).toBe(mockExecute);
-    expect(isProcessorAvailable('merge-pdf', customAdapters)).toBe(true);
+    expect(isProcessorAvailable('split-pdf', customAdapters)).toBe(true);
 
-    // Production registry remains unaltered
-    const prod = getToolProcessor('merge-pdf');
+    // Production registry remains unaltered (split-pdf is still unavailable in prod)
+    const prod = getToolProcessor('split-pdf');
     expect(prod.isAvailable).toBe(false);
     expect(prod.execute).toBeNull();
-    expect(isProcessorAvailable('merge-pdf')).toBe(false);
+    expect(isProcessorAvailable('split-pdf')).toBe(false);
   });
 });

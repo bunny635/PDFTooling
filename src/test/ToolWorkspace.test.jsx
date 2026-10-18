@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider, MemoryRouter } from 'react-router-dom';
 import { routes } from '../app/router.jsx';
 import { ThemeProvider } from '../app/providers/ThemeProvider.jsx';
+import { PDFDocument } from 'pdf-lib';
 import ToolWorkspace, { isFileDragEvent } from '../pages/ToolWorkspace.jsx';
 
 function renderWorkspace(route = '/tools/merge-pdf') {
@@ -339,7 +340,7 @@ describe('ToolWorkspace Component', () => {
   });
 
   describe('WS-02 Processing Lifecycle & Infrastructure', () => {
-    it('displays minimum file requirement advisory in action dock for merge-pdf', async () => {
+    it('displays minimum file requirement advisory and activates merge-pdf when two files are loaded', async () => {
       const { user } = renderWorkspace('/tools/merge-pdf');
 
       // Initially with 0 files
@@ -355,17 +356,89 @@ describe('ToolWorkspace Component', () => {
       expect(
         screen.getByText(/Select at least 2 files to enable merge pdfs\./i)
       ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Merge PDFs/i })).toBeDisabled();
+      // Ordering notice is displayed once files are present
+      expect(
+        screen.getByText(/PDFs will be merged in the order shown below\./i)
+      ).toBeInTheDocument();
 
       // Upload second file
       const file2 = new File(['file-two'], 'two.pdf', { type: 'application/pdf', lastModified: 1710000000201 });
       await user.upload(screen.getByLabelText(/Select files for Merge PDF/i), file2);
 
-      // Minimum satisfied: 2 files loaded, ready for processing, but processor unavailable in prod
+      // Minimum satisfied and merge-pdf processor is available in production
       expect(
         screen.getByText(/2 files loaded .* Ready for client-side processing\./i)
       ).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Merge PDFs/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Merge PDFs/i })).not.toBeDisabled();
+      expect(screen.getByText(/Local Sandbox Execution/i)).toBeInTheDocument();
+    });
+
+    it('keeps action button disabled and shows placeholder for unavailable tools even with valid input', async () => {
+      const { user } = renderWorkspace('/tools/split-pdf');
+
+      // Upload valid file to single-file tool (input satisfied)
+      const file = new File(['content'], 'sample.pdf', { type: 'application/pdf', lastModified: 1710000000205 });
+      await user.upload(screen.getByLabelText(/Select file for Split PDF/i), file);
+
+      // Input requirements satisfied, but split-pdf processor is unavailable in prod
+      expect(
+        screen.getByText(/1 file loaded .* Ready for client-side processing\./i)
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Split PDF/i })).toBeDisabled();
       expect(screen.getByText(/Processing Engine Placeholder/i)).toBeInTheDocument();
+    });
+
+    it('executes real production merge-pdf processor with genuine pdf-lib documents', async () => {
+      const user = userEvent.setup();
+      const { rerender } = render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="merge-pdf" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      // Create two genuine programmatic PDF fixtures
+      const doc1 = await PDFDocument.create();
+      doc1.addPage([100, 100]);
+      const bytes1 = await doc1.save();
+      const file1 = new File([bytes1], 'alpha.pdf', { type: 'application/pdf', lastModified: 1710000001000 });
+
+      const doc2 = await PDFDocument.create();
+      doc2.addPage([200, 200]);
+      doc2.addPage([210, 210]);
+      const bytes2 = await doc2.save();
+      const file2 = new File([bytes2], 'beta.pdf', { type: 'application/pdf', lastModified: 1710000002000 });
+
+      const fileInput = screen.getByLabelText(/Select files for Merge PDF/i);
+      await user.upload(fileInput, [file1, file2]);
+
+      expect(screen.getByText('alpha.pdf')).toBeInTheDocument();
+      expect(screen.getByText('beta.pdf')).toBeInTheDocument();
+      expect(screen.getByText(/PDFs will be merged in the order shown below\./i)).toBeInTheDocument();
+
+      const mergeButton = screen.getByRole('button', { name: /Merge PDFs/i });
+      expect(mergeButton).not.toBeDisabled();
+
+      // Click real Merge action
+      await user.click(mergeButton);
+
+      // Wait for output card
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('button', { name: /Download merged\.pdf/i })).toBeInTheDocument();
+      expect(screen.getAllByText(/merged\.pdf/i).length).toBeGreaterThanOrEqual(1);
+
+      // Removing a file invalidates the result and resets to idle/disabled
+      const removeFirst = screen.getByRole('button', { name: /Remove alpha\.pdf/i });
+      await user.click(removeFirst);
+
+      expect(screen.queryByRole('heading', { level: 2, name: /Ready for Download/i })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Merge PDFs/i })).toBeDisabled();
+      expect(screen.getByText(/Select at least 2 files to enable merge pdfs\./i)).toBeInTheDocument();
     });
 
     it('enables processing, locks controls, and displays download result with injected mock processor', async () => {
