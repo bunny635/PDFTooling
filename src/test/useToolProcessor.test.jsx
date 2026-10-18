@@ -371,6 +371,87 @@ describe('useToolProcessor Hook', () => {
     expect(result.current.result).toBeNull();
   });
 
+  it('cancels in-flight processing and prevents stale completion when options change during active execution', async () => {
+    let resolveProcessing;
+    const delayedPromise = new Promise((resolve) => {
+      resolveProcessing = resolve;
+    });
+
+    const mockAdapter = {
+      id: 'split-pdf',
+      isAvailable: true,
+      execute: vi.fn().mockImplementation(() => delayedPromise),
+    };
+
+    const files = [new File(['doc'], 'doc.pdf', { type: 'application/pdf' })];
+
+    const { result, rerender } = renderHook(
+      ({ options }) =>
+        useToolProcessor({
+          tool: splitTool,
+          files,
+          options,
+          processorAdapter: mockAdapter,
+        }),
+      { initialProps: { options: { pageSelection: '1' } } }
+    );
+
+    // Start processing
+    act(() => {
+      result.current.executeProcessing();
+    });
+    expect(result.current.status).toBe('processing');
+
+    // User edits options while processing is pending
+    rerender({ options: { pageSelection: '1-3' } });
+
+    // Status immediately resets to ready, canceling previous execution
+    expect(result.current.status).toBe('ready');
+
+    // Late resolution of delayed execution
+    await act(async () => {
+      resolveProcessing({
+        blob: new Blob(['delayed output'], { type: 'application/pdf' }),
+        suggestedFilename: 'delayed.pdf',
+      });
+    });
+
+    // Stale result is completely discarded
+    expect(result.current.status).toBe('ready');
+    expect(result.current.result).toBeNull();
+  });
+
+  it('prevents programmatic execution when isOptionsValid is false', async () => {
+    const mockExecute = vi.fn();
+    const mockAdapter = {
+      id: 'split-pdf',
+      isAvailable: true,
+      execute: mockExecute,
+    };
+
+    const files = [new File(['doc'], 'doc.pdf', { type: 'application/pdf' })];
+
+    const { result } = renderHook(() =>
+      useToolProcessor({
+        tool: splitTool,
+        files,
+        isOptionsValid: false,
+        processorAdapter: mockAdapter,
+      })
+    );
+
+    expect(result.current.canProcess).toBe(false);
+
+    // Attempt programmatic execution
+    await act(async () => {
+      await result.current.executeProcessing();
+    });
+
+    expect(mockExecute).not.toHaveBeenCalled();
+    expect(result.current.status).toBe('idle');
+    expect(result.current.result).toBeNull();
+  });
+
   it('revokes download URLs when component unmounts', () => {
     const revokeSpy = vi.spyOn(URL, 'revokeObjectURL');
 

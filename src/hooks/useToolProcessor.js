@@ -66,7 +66,12 @@ export function useToolProcessor({
     retainedResultUrlsRef.current.clear();
   }, []);
 
-  const serializedOptions = JSON.stringify(options || {});
+  let serializedOptions = '';
+  try {
+    serializedOptions = JSON.stringify(options || {});
+  } catch {
+    serializedOptions = String(options);
+  }
 
   // When files or options change, clear previous results, abort ongoing tasks, and compute status
   useEffect(() => {
@@ -162,8 +167,8 @@ export function useToolProcessor({
       });
       setStatus('success');
     } catch (err) {
-      // Stale execution or unmount guard
-      if (!isMountedRef.current || executionTokenRef.current !== currentToken) {
+      // Stale execution, unmount, or cancellation guard
+      if (!isMountedRef.current || executionTokenRef.current !== currentToken || controller.signal.aborted) {
         return;
       }
 

@@ -146,16 +146,18 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
     setInspectionError(null);
     setSourcePageCount(null);
 
+    let isMounted = true;
+
     (async () => {
       try {
         const { getPdfPageCount } = await import('../processors/splitPdf.js');
         const count = await getPdfPageCount(targetFile, controller.signal);
-        if (inspectionTokenRef.current === currentToken) {
+        if (isMounted && inspectionTokenRef.current === currentToken) {
           setSourcePageCount(count);
           setIsInspecting(false);
         }
       } catch (err) {
-        if (inspectionTokenRef.current === currentToken) {
+        if (isMounted && inspectionTokenRef.current === currentToken && !controller.signal.aborted) {
           setIsInspecting(false);
           setInspectionError(err?.message || 'Failed to inspect PDF pages.');
         }
@@ -163,6 +165,8 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
     })();
 
     return () => {
+      isMounted = false;
+      inspectionTokenRef.current += 1;
       controller.abort();
     };
   }, [isSplitTool, selectedFiles]);

@@ -504,6 +504,99 @@ describe('ToolWorkspace Component', () => {
       expect(screen.queryByRole('heading', { level: 2, name: /Ready for Download/i })).not.toBeInTheDocument();
     });
 
+    it('discards stale page count when replacing a file during asynchronous inspection', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="split-pdf" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      // Doc 1: 5 pages
+      const doc1 = await PDFDocument.create();
+      for (let i = 0; i < 5; i++) doc1.addPage([100, 100]);
+      const file1 = new File([await doc1.save()], 'five-pages.pdf', { type: 'application/pdf', lastModified: 1710000000001 });
+
+      // Doc 2: 2 pages
+      const doc2 = await PDFDocument.create();
+      for (let i = 0; i < 2; i++) doc2.addPage([100, 100]);
+      const file2 = new File([await doc2.save()], 'two-pages.pdf', { type: 'application/pdf', lastModified: 1710000000002 });
+
+      const fileInput = screen.getByLabelText(/Select file for Split PDF/i);
+
+      // Rapidly upload file1 then file2
+      await user.upload(fileInput, file1);
+      await user.upload(fileInput, file2);
+
+      // Verify second file replaces the first file
+      expect(screen.getByText('two-pages.pdf')).toBeInTheDocument();
+      expect(screen.queryByText('five-pages.pdf')).not.toBeInTheDocument();
+
+      // Final settled page count must strictly be from file 2 (2 Pages Total)
+      await waitFor(() => {
+        expect(screen.getByText(/2 Pages Total/i)).toBeInTheDocument();
+      });
+      expect(screen.queryByText(/5 Pages Total/i)).not.toBeInTheDocument();
+    });
+
+    it('cancels asynchronous page inspection cleanly upon file removal', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="split-pdf" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const doc = await PDFDocument.create();
+      doc.addPage([100, 100]);
+      const file = new File([await doc.save()], 'sample.pdf', { type: 'application/pdf', lastModified: 1710000000003 });
+
+      const fileInput = screen.getByLabelText(/Select file for Split PDF/i);
+      await user.upload(fileInput, file);
+
+      expect(screen.getByText('sample.pdf')).toBeInTheDocument();
+
+      // Immediately remove the file
+      await user.click(screen.getByRole('button', { name: /Remove sample\.pdf/i }));
+
+      // Workspace must cleanly return to idle state with no stale errors or badges
+      expect(screen.queryByText('sample.pdf')).not.toBeInTheDocument();
+      expect(screen.queryByText(/Pages Total/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Split PDF/i })).toBeDisabled();
+    });
+
+    it('unmounts during asynchronous page inspection without throwing or logging errors', async () => {
+      const user = userEvent.setup();
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const { unmount } = render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="split-pdf" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const doc = await PDFDocument.create();
+      doc.addPage([100, 100]);
+      const file = new File([await doc.save()], 'unmount-test.pdf', { type: 'application/pdf', lastModified: 1710000000004 });
+
+      const fileInput = screen.getByLabelText(/Select file for Split PDF/i);
+      await user.upload(fileInput, file);
+
+      // Unmount immediately while inspection is in-flight
+      unmount();
+
+      // Verify no React state update errors or unhandled rejections occurred
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+      consoleErrorSpy.mockRestore();
+    });
+
     it('enables processing, locks controls, and displays download result with injected mock processor', async () => {
       const user = userEvent.setup();
       let resolveMock;
