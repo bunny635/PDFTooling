@@ -274,9 +274,9 @@ describe('ToolWorkspace Component', () => {
   });
 
   it('keeps processing action button disabled and displays placeholder engine explanation', () => {
-    renderWorkspace('/tools/reorder-pages');
+    renderWorkspace('/tools/jpg-to-pdf');
 
-    const actionButton = screen.getByRole('button', { name: /Reorder Pages/i });
+    const actionButton = screen.getByRole('button', { name: /Convert to PDF/i });
     expect(actionButton).toBeDisabled();
 
     expect(
@@ -375,17 +375,17 @@ describe('ToolWorkspace Component', () => {
     });
 
     it('keeps action button disabled and shows placeholder for unavailable tools even with valid input', async () => {
-      const { user } = renderWorkspace('/tools/reorder-pages');
+      const { user } = renderWorkspace('/tools/jpg-to-pdf');
 
       // Upload valid file to single-file tool (input satisfied)
-      const file = new File(['content'], 'sample.pdf', { type: 'application/pdf', lastModified: 1710000000205 });
-      await user.upload(screen.getByLabelText(/Select file for Reorder Pages/i), file);
+      const file = new File(['content'], 'sample.jpg', { type: 'image/jpeg', lastModified: 1710000000205 });
+      await user.upload(screen.getByLabelText(/Select files for JPG to PDF/i), file);
 
-      // Input requirements satisfied, but reorder-pages processor is unavailable in prod
+      // Input requirements satisfied, but jpg-to-pdf processor is unavailable in prod
       expect(
         screen.getByText(/1 file loaded .* Ready for client-side processing\./i)
       ).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Reorder Pages/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Convert to PDF/i })).toBeDisabled();
       expect(screen.getByText(/Processing Engine Placeholder/i)).toBeInTheDocument();
     });
 
@@ -605,7 +605,7 @@ describe('ToolWorkspace Component', () => {
       });
 
       const mockAdapter = {
-        id: 'reorder-pages',
+        id: 'jpg-to-pdf',
         isAvailable: true,
         execute: vi.fn().mockImplementation(() => delayedPromise),
       };
@@ -613,17 +613,17 @@ describe('ToolWorkspace Component', () => {
       render(
         <ThemeProvider>
           <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <ToolWorkspace slugOverride="reorder-pages" processorAdapterOverride={mockAdapter} />
+            <ToolWorkspace slugOverride="jpg-to-pdf" processorAdapterOverride={mockAdapter} />
           </MemoryRouter>
         </ThemeProvider>
       );
 
-      const file = new File(['source'], 'original.pdf', { type: 'application/pdf', lastModified: 1710000000210 });
-      const fileInput = screen.getByLabelText(/Select file for Reorder Pages/i);
+      const file = new File(['source'], 'original.jpg', { type: 'image/jpeg', lastModified: 1710000000210 });
+      const fileInput = screen.getByLabelText(/Select files for JPG to PDF/i);
       await user.upload(fileInput, file);
 
       // Action button should now be enabled because processor is available and input is ready
-      const processButton = screen.getByRole('button', { name: /Reorder Pages/i });
+      const processButton = screen.getByRole('button', { name: /Convert to PDF/i });
       expect(processButton).not.toBeDisabled();
 
       // Click to start processing
@@ -631,24 +631,24 @@ describe('ToolWorkspace Component', () => {
 
       // Processing state active: button shows loading, controls are disabled
       expect(screen.getByText(/Processing document in your local browser sandbox/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Select File/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Select Files/i })).toBeDisabled();
       expect(screen.getByRole('button', { name: /Clear All/i })).toBeDisabled();
-      expect(screen.getByRole('button', { name: /Remove original.pdf/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Remove original.jpg/i })).toBeDisabled();
 
       // Resolve the processing
-      const outputBlob = new Blob(['%PDF-1.4 merged result'], { type: 'application/pdf' });
+      const outputBlob = new Blob(['%PDF-1.4 converted result'], { type: 'application/pdf' });
       await act(async () => {
         resolveMock({
           blob: outputBlob,
-          suggestedFilename: 'reordered.pdf',
+          suggestedFilename: 'converted.pdf',
           mimeType: 'application/pdf',
         });
       });
 
       // Successful completion: Download banner appears
       expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
-      expect(screen.getAllByText(/reordered\.pdf/i).length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByRole('button', { name: /Download reordered\.pdf/i })).toBeInTheDocument();
+      expect(screen.getAllByText(/converted\.pdf/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByRole('button', { name: /Download converted\.pdf/i })).toBeInTheDocument();
 
       // Clear all resets state and removes download card
       await user.click(screen.getByRole('button', { name: /Clear All/i }));
@@ -658,23 +658,23 @@ describe('ToolWorkspace Component', () => {
     it('displays accessible error banner on processor failure and allows dismissal', async () => {
       const user = userEvent.setup();
       const mockAdapter = {
-        id: 'reorder-pages',
+        id: 'jpg-to-pdf',
         isAvailable: true,
-        execute: vi.fn().mockRejectedValue(new Error('Corrupt PDF trailer syntax.')),
+        execute: vi.fn().mockRejectedValue(new Error('Corrupt JPG image stream.')),
       };
 
       render(
         <ThemeProvider>
           <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <ToolWorkspace slugOverride="reorder-pages" processorAdapterOverride={mockAdapter} />
+            <ToolWorkspace slugOverride="jpg-to-pdf" processorAdapterOverride={mockAdapter} />
           </MemoryRouter>
         </ThemeProvider>
       );
 
-      const file = new File(['bad'], 'corrupt.pdf', { type: 'application/pdf', lastModified: 1710000000220 });
-      await user.upload(screen.getByLabelText(/Select file for Reorder Pages/i), file);
+      const file = new File(['bad'], 'corrupt.jpg', { type: 'image/jpeg', lastModified: 1710000000220 });
+      await user.upload(screen.getByLabelText(/Select files for JPG to PDF/i), file);
 
-      const actionButton = screen.getByRole('button', { name: /Reorder Pages/i });
+      const actionButton = screen.getByRole('button', { name: /Convert to PDF/i });
       expect(actionButton).not.toBeDisabled();
 
       await user.click(actionButton);
@@ -682,7 +682,7 @@ describe('ToolWorkspace Component', () => {
       // Accessible error banner should be displayed
       expect(screen.getByRole('alert')).toBeInTheDocument();
       expect(screen.getByText('Processing Error')).toBeInTheDocument();
-      expect(screen.getByText('Corrupt PDF trailer syntax.')).toBeInTheDocument();
+      expect(screen.getByText('Corrupt JPG image stream.')).toBeInTheDocument();
 
       // Dismissing error clears the banner
       await user.click(screen.getByRole('button', { name: /Dismiss/i }));
@@ -983,6 +983,188 @@ describe('ToolWorkspace Component', () => {
       await user.click(screen.getByRole('button', { name: /Clear All/i }));
       expect(screen.queryByRole('heading', { level: 2, name: /Ready for Download/i })).not.toBeInTheDocument();
       expect(screen.queryByText(/Pages Total/i)).not.toBeInTheDocument();
+    });
+  });
+
+  describe('PDF-05 Reorder Pages Workspace Integration', () => {
+    it('inspects page count and renders reorder configuration card with badge and presets', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="reorder-pages" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const doc = await PDFDocument.create();
+      for (let i = 0; i < 4; i++) doc.addPage([100, 100]);
+      const file = new File([await doc.save()], 'four-pages.pdf', { type: 'application/pdf', lastModified: 1710000000500 });
+
+      await user.upload(screen.getByLabelText(/Select file for Reorder Pages/i), file);
+
+      // Verify page count badge
+      await waitFor(() => {
+        expect(screen.getByText(/4 Pages Total/i)).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('heading', { level: 3, name: /Specify Desired Page Order/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Reverse Order/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Reset Order/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Swap First & Last/i })).toBeInTheDocument();
+      expect(screen.getByLabelText(/New Page Sequence/i)).toBeInTheDocument();
+
+      // Action button should be disabled because page sequence is empty
+      const reorderButton = screen.getByRole('button', { name: /Reorder Pages/i });
+      expect(reorderButton).toBeDisabled();
+    });
+
+    it('applies quick presets correctly and updates input and helper text', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="reorder-pages" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const doc = await PDFDocument.create();
+      for (let i = 0; i < 4; i++) doc.addPage([100, 100]);
+      const file = new File([await doc.save()], 'four-pages.pdf', { type: 'application/pdf', lastModified: 1710000000501 });
+
+      await user.upload(screen.getByLabelText(/Select file for Reorder Pages/i), file);
+      await waitFor(() => {
+        expect(screen.getByText(/4 Pages Total/i)).toBeInTheDocument();
+      });
+
+      const pageInput = screen.getByLabelText(/New Page Sequence/i);
+      const reorderButton = screen.getByRole('button', { name: /Reorder Pages/i });
+
+      // 1. Reverse Order preset
+      await user.click(screen.getByRole('button', { name: /Reverse Order/i }));
+      expect(pageInput.value).toBe('4, 3, 2, 1');
+      expect(screen.getByText(/New order: 4 → 3 → 2 → 1/i)).toBeInTheDocument();
+      expect(reorderButton).not.toBeDisabled();
+
+      // 2. Reset Order preset
+      await user.click(screen.getByRole('button', { name: /Reset Order/i }));
+      expect(pageInput.value).toBe('1, 2, 3, 4');
+      expect(screen.getByText(/New order: 1 → 2 → 3 → 4/i)).toBeInTheDocument();
+      expect(reorderButton).not.toBeDisabled();
+
+      // 3. Swap First & Last preset
+      await user.click(screen.getByRole('button', { name: /Swap First & Last/i }));
+      expect(pageInput.value).toBe('4, 2, 3, 1');
+      expect(screen.getByText(/New order: 4 → 2 → 3 → 1/i)).toBeInTheDocument();
+      expect(reorderButton).not.toBeDisabled();
+    });
+
+    it('sets page order to 1 for all presets on a single-page document', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="reorder-pages" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const doc = await PDFDocument.create();
+      doc.addPage([100, 100]);
+      const file = new File([await doc.save()], 'one-page.pdf', { type: 'application/pdf', lastModified: 1710000000502 });
+
+      await user.upload(screen.getByLabelText(/Select file for Reorder Pages/i), file);
+      await waitFor(() => {
+        expect(screen.getByText(/1 Page Total/i)).toBeInTheDocument();
+      });
+
+      const pageInput = screen.getByLabelText(/New Page Sequence/i);
+
+      // All three presets on 1 page set '1'
+      await user.click(screen.getByRole('button', { name: /Reverse Order/i }));
+      expect(pageInput.value).toBe('1');
+
+      await user.click(screen.getByRole('button', { name: /Reset Order/i }));
+      expect(pageInput.value).toBe('1');
+
+      await user.click(screen.getByRole('button', { name: /Swap First & Last/i }));
+      expect(pageInput.value).toBe('1');
+    });
+
+    it('executes real production reorder-pages processor and invalidates results on input change', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="reorder-pages" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const doc = await PDFDocument.create();
+      for (let i = 0; i < 3; i++) doc.addPage([100, 100]);
+      const file = new File([await doc.save()], 'three-pages.pdf', { type: 'application/pdf', lastModified: 1710000000503 });
+
+      await user.upload(screen.getByLabelText(/Select file for Reorder Pages/i), file);
+      await waitFor(() => {
+        expect(screen.getByText(/3 Pages Total/i)).toBeInTheDocument();
+      });
+
+      const pageInput = screen.getByLabelText(/New Page Sequence/i);
+      const reorderButton = screen.getByRole('button', { name: /Reorder Pages/i });
+
+      // Enter permutation
+      await user.type(pageInput, '3, 1, 2');
+      expect(screen.getByText(/New order: 3 → 1 → 2/i)).toBeInTheDocument();
+      expect(reorderButton).not.toBeDisabled();
+
+      // Trigger reordering
+      await user.click(reorderButton);
+
+      // Result card should appear with reordered.pdf
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
+      });
+      expect(screen.getByRole('button', { name: /Download reordered\.pdf/i })).toBeInTheDocument();
+
+      // Modifying page order invalidates download result immediately
+      await user.type(pageInput, ', 1');
+      expect(screen.queryByRole('heading', { level: 2, name: /Ready for Download/i })).not.toBeInTheDocument();
+    });
+
+    it('validates permutation requirements and rejects duplicate or missing pages', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="reorder-pages" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const doc = await PDFDocument.create();
+      for (let i = 0; i < 3; i++) doc.addPage([100, 100]);
+      const file = new File([await doc.save()], 'three-pages.pdf', { type: 'application/pdf', lastModified: 1710000000504 });
+
+      await user.upload(screen.getByLabelText(/Select file for Reorder Pages/i), file);
+      await waitFor(() => {
+        expect(screen.getByText(/3 Pages Total/i)).toBeInTheDocument();
+      });
+
+      const pageInput = screen.getByLabelText(/New Page Sequence/i);
+      const reorderButton = screen.getByRole('button', { name: /Reorder Pages/i });
+
+      // Missing page 3
+      await user.type(pageInput, '1, 2');
+      expect(screen.getByText(/Missing page\(s\): 3/i)).toBeInTheDocument();
+      expect(reorderButton).toBeDisabled();
+
+      // Duplicate page 1
+      await user.clear(pageInput);
+      await user.type(pageInput, '1, 1, 2');
+      expect(screen.getByText(/Duplicate page 1 detected/i)).toBeInTheDocument();
+      expect(reorderButton).toBeDisabled();
     });
   });
 

@@ -27,7 +27,7 @@ import {
   isDuplicateFile,
   formatFileSize,
 } from '../utils/fileValidation.js';
-import { parsePageRange } from '../utils/pageSelection.js';
+import { parsePageRange, parsePageOrder } from '../utils/pageSelection.js';
 import { useToolProcessor } from '../hooks/useToolProcessor.js';
 import NotFound from './NotFound.jsx';
 
@@ -85,8 +85,9 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
   const [alerts, setAlerts] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Page-level and single-file tool specific states (Split, Rotate)
+  // Page-level and single-file tool specific states (Split, Rotate, Delete, Reorder)
   const [pageSelection, setPageSelection] = useState('');
+  const [pageOrder, setPageOrder] = useState('');
   const [sourcePageCount, setSourcePageCount] = useState(null);
   const [isInspecting, setIsInspecting] = useState(false);
   const [inspectionError, setInspectionError] = useState(null);
@@ -103,7 +104,8 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
   const isSplitTool = tool.id === 'split-pdf';
   const isRotateTool = tool.id === 'rotate-pdf';
   const isDeleteTool = tool.id === 'delete-pages';
-  const needsPageInspection = isSplitTool || isRotateTool || isDeleteTool;
+  const isReorderTool = tool.id === 'reorder-pages';
+  const needsPageInspection = isSplitTool || isRotateTool || isDeleteTool || isReorderTool;
 
   // Prevent browser default navigation when files are accidentally dropped outside the dropzone
   useEffect(() => {
@@ -216,6 +218,14 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
     };
   }, [isDeleteTool, pageSelection, sourcePageCount]);
 
+  // Validate human-entered page sequence for Reorder Pages
+  const orderResult = useMemo(() => {
+    if (!isReorderTool || sourcePageCount === null) {
+      return null;
+    }
+    return parsePageOrder(pageOrder, sourcePageCount);
+  }, [isReorderTool, pageOrder, sourcePageCount]);
+
   const isOptionsValid = useMemo(() => {
     if (isSplitTool) {
       return Boolean(sourcePageCount !== null && rangeResult?.valid);
@@ -229,8 +239,11 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
     if (isDeleteTool) {
       return Boolean(sourcePageCount !== null && deleteResult?.valid);
     }
+    if (isReorderTool) {
+      return Boolean(sourcePageCount !== null && orderResult?.valid);
+    }
     return true;
-  }, [isSplitTool, isRotateTool, isDeleteTool, sourcePageCount, rangeResult, rotationAngle, rotationScope, deleteResult]);
+  }, [isSplitTool, isRotateTool, isDeleteTool, isReorderTool, sourcePageCount, rangeResult, rotationAngle, rotationScope, deleteResult, orderResult]);
 
   // When scope is All pages for Rotate, exclude the inactive page-selection value from effective processing options
   // so that hidden input changes do not unnecessarily invalidate results.
@@ -245,8 +258,11 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
         ...(rotationScope === 'selected' ? { pageSelection } : {}),
       };
     }
+    if (isReorderTool) {
+      return { pageOrder };
+    }
     return undefined;
-  }, [isSplitTool, isRotateTool, isDeleteTool, pageSelection, rotationAngle, rotationScope]);
+  }, [isSplitTool, isRotateTool, isDeleteTool, isReorderTool, pageSelection, pageOrder, rotationAngle, rotationScope]);
 
   // Hook managing processing lifecycle (idle, ready, processing, success, error)
   const {
@@ -324,6 +340,7 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
 
         if (needsPageInspection) {
           setPageSelection('');
+          setPageOrder('');
           setInspectionError(null);
           if (isRotateTool) {
             setRotationAngle(90);
@@ -412,6 +429,7 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
     setSelectedFiles((prev) => prev.filter((_, idx) => idx !== indexToRemove));
     if (needsPageInspection) {
       setPageSelection('');
+      setPageOrder('');
       setSourcePageCount(null);
       setInspectionError(null);
       if (isRotateTool) {
@@ -430,6 +448,7 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
     setAlerts([]);
     if (needsPageInspection) {
       setPageSelection('');
+      setPageOrder('');
       setSourcePageCount(null);
       setInspectionError(null);
       if (isRotateTool) {
@@ -445,6 +464,26 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
 
   const handleDismissAlert = (alertId) => {
     setAlerts((prev) => prev.filter((a) => a.id !== alertId));
+  };
+
+  const handleApplyPreset = (presetType) => {
+    if (!sourcePageCount || sourcePageCount <= 0) return;
+    if (sourcePageCount === 1) {
+      setPageOrder('1');
+      return;
+    }
+    if (presetType === 'reverse') {
+      const seq = Array.from({ length: sourcePageCount }, (_, i) => sourcePageCount - i);
+      setPageOrder(seq.join(', '));
+    } else if (presetType === 'reset') {
+      const seq = Array.from({ length: sourcePageCount }, (_, i) => i + 1);
+      setPageOrder(seq.join(', '));
+    } else if (presetType === 'swapFirstLast') {
+      const seq = Array.from({ length: sourcePageCount }, (_, i) => i + 1);
+      seq[0] = sourcePageCount;
+      seq[sourcePageCount - 1] = 1;
+      setPageOrder(seq.join(', '));
+    }
   };
 
   return (
@@ -989,6 +1028,95 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
         </div>
       )}
 
+      {/* Reorder PDF Pages Configuration */}
+      {isReorderTool && selectedFiles.length === 1 && (
+        <div className="glass-panel p-5 sm:p-6 mt-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 className="font-heading text-sm sm:text-base font-bold text-primary">
+                Specify Desired Page Order
+              </h3>
+              <p className="text-xs text-secondary mt-0.5">
+                Enter the new page sequence or use one of the quick presets below.
+              </p>
+            </div>
+            {isInspecting ? (
+              <span className="glass-pill px-3 py-1 text-xs text-accent flex items-center gap-1.5 self-start sm:self-auto">
+                <span className="h-3 w-3 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+                Inspecting pages...
+              </span>
+            ) : sourcePageCount !== null ? (
+              <GlassBadge variant="accent" size="md" className="self-start sm:self-auto">
+                {sourcePageCount} {sourcePageCount === 1 ? 'Page' : 'Pages'} Total
+              </GlassBadge>
+            ) : null}
+          </div>
+
+          {inspectionError ? (
+            <div className="p-3.5 rounded-xl border border-status-danger/30 bg-status-danger/10 text-status-danger text-xs sm:text-sm flex items-start gap-2.5">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+              <span>{inspectionError}</span>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <span className="text-xs font-semibold text-secondary block mb-2">
+                  Quick Presets
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  <GlassButton
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={isProcessing || isInspecting || sourcePageCount === null}
+                    onClick={() => handleApplyPreset('reverse')}
+                  >
+                    Reverse Order
+                  </GlassButton>
+                  <GlassButton
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={isProcessing || isInspecting || sourcePageCount === null}
+                    onClick={() => handleApplyPreset('reset')}
+                  >
+                    Reset Order
+                  </GlassButton>
+                  <GlassButton
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={isProcessing || isInspecting || sourcePageCount === null}
+                    onClick={() => handleApplyPreset('swapFirstLast')}
+                  >
+                    Swap First & Last
+                  </GlassButton>
+                </div>
+              </div>
+
+              <GlassInput
+                id="reorder-page-order"
+                label="New Page Sequence"
+                placeholder="e.g. 4, 1-3 or 4, 1, 2, 3"
+                value={pageOrder}
+                disabled={isProcessing || isInspecting || sourcePageCount === null}
+                onChange={(e) => setPageOrder(e.target.value)}
+                helperText={
+                  orderResult?.valid
+                    ? `New order: ${orderResult.pageIndices.map((i) => i + 1).join(' → ')}`
+                    : 'Enter a comma-separated permutation of all pages (ranges supported).'
+                }
+                error={
+                  pageOrder.trim().length > 0 && !orderResult?.valid
+                    ? orderResult?.error
+                    : undefined
+                }
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Action Dock / Processing Section */}
       <div className="glass-panel p-6 sm:p-8 mt-8 border-t border-border-subtle">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -1043,6 +1171,18 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
                     }. Retaining ${deleteResult.retainCount} ${
                       deleteResult.retainCount === 1 ? 'page' : 'pages'
                     }. Ready for client-side processing.`
+                : isReorderTool
+                ? isInspecting
+                  ? 'Inspecting document pages in local sandbox...'
+                  : inspectionError
+                  ? 'Cannot process: source document has inspection errors.'
+                  : !pageOrder.trim()
+                  ? 'Enter the desired page order above.'
+                  : !orderResult?.valid
+                  ? 'Please correct the page order above.'
+                  : `Reordering ${orderResult.pageIndices.length} ${
+                      orderResult.pageIndices.length === 1 ? 'page' : 'pages'
+                    } (${orderResult.pageIndices.map((i) => i + 1).join(' → ')}). Ready for client-side processing.`
                 : `${selectedFiles.length} ${
                     selectedFiles.length === 1 ? 'file' : 'files'
                   } loaded (${formatFileSize(totalSize)}). Ready for client-side processing.`}
