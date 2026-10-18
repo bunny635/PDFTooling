@@ -375,17 +375,17 @@ describe('ToolWorkspace Component', () => {
     });
 
     it('keeps action button disabled and shows placeholder for unavailable tools even with valid input', async () => {
-      const { user } = renderWorkspace('/tools/split-pdf');
+      const { user } = renderWorkspace('/tools/rotate-pdf');
 
       // Upload valid file to single-file tool (input satisfied)
       const file = new File(['content'], 'sample.pdf', { type: 'application/pdf', lastModified: 1710000000205 });
-      await user.upload(screen.getByLabelText(/Select file for Split PDF/i), file);
+      await user.upload(screen.getByLabelText(/Select file for Rotate PDF/i), file);
 
-      // Input requirements satisfied, but split-pdf processor is unavailable in prod
+      // Input requirements satisfied, but rotate-pdf processor is unavailable in prod
       expect(
         screen.getByText(/1 file loaded .* Ready for client-side processing\./i)
       ).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Split PDF/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Rotate PDF/i })).toBeDisabled();
       expect(screen.getByText(/Processing Engine Placeholder/i)).toBeInTheDocument();
     });
 
@@ -441,6 +441,69 @@ describe('ToolWorkspace Component', () => {
       expect(screen.getByText(/Select at least 2 files to enable merge pdfs\./i)).toBeInTheDocument();
     });
 
+    it('executes real production split-pdf processor with genuine pdf-lib document and page selection', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="split-pdf" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      // Create a 4-page source PDF document
+      const doc = await PDFDocument.create();
+      doc.addPage([100, 100]); // page 1
+      doc.addPage([110, 110]); // page 2
+      doc.addPage([120, 120]); // page 3
+      doc.addPage([130, 130]); // page 4
+      const bytes = await doc.save();
+      const file = new File([bytes], 'source-doc.pdf', { type: 'application/pdf', lastModified: 1710000003000 });
+
+      const fileInput = screen.getByLabelText(/Select file for Split PDF/i);
+      await user.upload(fileInput, file);
+
+      expect(screen.getByText('source-doc.pdf')).toBeInTheDocument();
+
+      // Wait for async page count inspection
+      await waitFor(() => {
+        expect(screen.getByText(/4 Pages Total/i)).toBeInTheDocument();
+      });
+
+      // Split button is disabled before page selection is entered
+      const splitButton = screen.getByRole('button', { name: /Split PDF/i });
+      expect(splitButton).toBeDisabled();
+      expect(screen.getByText(/Enter the pages you want to extract above\./i)).toBeInTheDocument();
+
+      const pageInput = screen.getByLabelText(/Pages to Extract/i);
+
+      // Enter invalid page exceeding total
+      await user.type(pageInput, '5');
+      expect(splitButton).toBeDisabled();
+      expect(screen.getByText(/exceeds total document pages/i)).toBeInTheDocument();
+
+      // Clear and enter valid page range
+      await user.clear(pageInput);
+      await user.type(pageInput, '1, 3-4');
+
+      expect(screen.getByText(/Selected 3 pages: 1, 3, 4/i)).toBeInTheDocument();
+      expect(splitButton).not.toBeDisabled();
+
+      // Click Split PDF
+      await user.click(splitButton);
+
+      // Wait for output card
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('button', { name: /Download extracted-pages\.pdf/i })).toBeInTheDocument();
+
+      // Modifying page selection invalidates the download result
+      await user.type(pageInput, ', 2');
+      expect(screen.queryByRole('heading', { level: 2, name: /Ready for Download/i })).not.toBeInTheDocument();
+    });
+
     it('enables processing, locks controls, and displays download result with injected mock processor', async () => {
       const user = userEvent.setup();
       let resolveMock;
@@ -449,7 +512,7 @@ describe('ToolWorkspace Component', () => {
       });
 
       const mockAdapter = {
-        id: 'split-pdf',
+        id: 'rotate-pdf',
         isAvailable: true,
         execute: vi.fn().mockImplementation(() => delayedPromise),
       };
@@ -457,17 +520,17 @@ describe('ToolWorkspace Component', () => {
       render(
         <ThemeProvider>
           <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <ToolWorkspace slugOverride="split-pdf" processorAdapterOverride={mockAdapter} />
+            <ToolWorkspace slugOverride="rotate-pdf" processorAdapterOverride={mockAdapter} />
           </MemoryRouter>
         </ThemeProvider>
       );
 
       const file = new File(['source'], 'original.pdf', { type: 'application/pdf', lastModified: 1710000000210 });
-      const fileInput = screen.getByLabelText(/Select file for Split PDF/i);
+      const fileInput = screen.getByLabelText(/Select file for Rotate PDF/i);
       await user.upload(fileInput, file);
 
       // Action button should now be enabled because processor is available and input is ready
-      const processButton = screen.getByRole('button', { name: /Split PDF/i });
+      const processButton = screen.getByRole('button', { name: /Rotate PDF/i });
       expect(processButton).not.toBeDisabled();
 
       // Click to start processing
@@ -484,15 +547,15 @@ describe('ToolWorkspace Component', () => {
       await act(async () => {
         resolveMock({
           blob: outputBlob,
-          suggestedFilename: 'extracted-pages.pdf',
+          suggestedFilename: 'rotated.pdf',
           mimeType: 'application/pdf',
         });
       });
 
       // Successful completion: Download banner appears
       expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
-      expect(screen.getAllByText(/extracted-pages\.pdf/i).length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByRole('button', { name: /Download extracted-pages\.pdf/i })).toBeInTheDocument();
+      expect(screen.getAllByText(/rotated\.pdf/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByRole('button', { name: /Download rotated\.pdf/i })).toBeInTheDocument();
 
       // Clear all resets state and removes download card
       await user.click(screen.getByRole('button', { name: /Clear All/i }));

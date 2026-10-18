@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -21,12 +21,13 @@ import {
   Download,
 } from 'lucide-react';
 import { getToolBySlug } from '../config/toolRegistry.js';
-import { GlassCard, GlassBadge, GlassButton } from '../components/glass/index.js';
+import { GlassCard, GlassBadge, GlassButton, GlassInput } from '../components/glass/index.js';
 import {
   validateFileForTool,
   isDuplicateFile,
   formatFileSize,
 } from '../utils/fileValidation.js';
+import { parsePageRange } from '../utils/pageSelection.js';
 import { useToolProcessor } from '../hooks/useToolProcessor.js';
 import NotFound from './NotFound.jsx';
 
@@ -84,8 +85,18 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
   const [alerts, setAlerts] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
 
+  // Split PDF specific states
+  const [pageSelection, setPageSelection] = useState('');
+  const [sourcePageCount, setSourcePageCount] = useState(null);
+  const [isInspecting, setIsInspecting] = useState(false);
+  const [inspectionError, setInspectionError] = useState(null);
+
   const fileInputRef = useRef(null);
   const dragCounterRef = useRef(0);
+  const inspectionTokenRef = useRef(0);
+  const inspectionAbortRef = useRef(null);
+
+  const isSplitTool = tool.id === 'split-pdf';
 
   // Prevent browser default navigation when files are accidentally dropped outside the dropzone
   useEffect(() => {
@@ -110,6 +121,68 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
     };
   }, []);
 
+  // Inspect page count asynchronously for Split PDF without eager bundle bloat
+  useEffect(() => {
+    if (!isSplitTool) return;
+
+    inspectionTokenRef.current += 1;
+    const currentToken = inspectionTokenRef.current;
+    if (inspectionAbortRef.current) {
+      inspectionAbortRef.current.abort();
+      inspectionAbortRef.current = null;
+    }
+
+    if (selectedFiles.length !== 1) {
+      setSourcePageCount(null);
+      setIsInspecting(false);
+      setInspectionError(null);
+      return;
+    }
+
+    const targetFile = selectedFiles[0];
+    const controller = new AbortController();
+    inspectionAbortRef.current = controller;
+    setIsInspecting(true);
+    setInspectionError(null);
+    setSourcePageCount(null);
+
+    (async () => {
+      try {
+        const { getPdfPageCount } = await import('../processors/splitPdf.js');
+        const count = await getPdfPageCount(targetFile, controller.signal);
+        if (inspectionTokenRef.current === currentToken) {
+          setSourcePageCount(count);
+          setIsInspecting(false);
+        }
+      } catch (err) {
+        if (inspectionTokenRef.current === currentToken) {
+          setIsInspecting(false);
+          setInspectionError(err?.message || 'Failed to inspect PDF pages.');
+        }
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+  }, [isSplitTool, selectedFiles]);
+
+  // Validate human-entered page selection against inspected page count
+  const rangeResult = useMemo(() => {
+    if (!isSplitTool || sourcePageCount === null) return null;
+    return parsePageRange(pageSelection, sourcePageCount);
+  }, [isSplitTool, pageSelection, sourcePageCount]);
+
+  const isOptionsValid = useMemo(() => {
+    if (!isSplitTool) return true;
+    return Boolean(sourcePageCount !== null && rangeResult?.valid);
+  }, [isSplitTool, sourcePageCount, rangeResult]);
+
+  const processorOptions = useMemo(() => {
+    if (!isSplitTool) return undefined;
+    return { pageSelection };
+  }, [isSplitTool, pageSelection]);
+
   // Hook managing processing lifecycle (idle, ready, processing, success, error)
   const {
     status,
@@ -126,6 +199,8 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
   } = useToolProcessor({
     tool,
     files: selectedFiles,
+    options: processorOptions,
+    isOptionsValid,
     processorAdapter: processorAdapterOverride,
   });
 
@@ -181,6 +256,11 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
       if (validNewFiles.length > 0) {
         const chosenFile = validNewFiles[0];
         setSelectedFiles([chosenFile]);
+
+        if (isSplitTool) {
+          setPageSelection('');
+          setInspectionError(null);
+        }
 
         if (selectedFiles.length > 0) {
           newAlerts.push({
@@ -261,6 +341,11 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
   const handleRemoveFile = (indexToRemove) => {
     if (isProcessing) return;
     setSelectedFiles((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+    if (isSplitTool) {
+      setPageSelection('');
+      setSourcePageCount(null);
+      setInspectionError(null);
+    }
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -270,6 +355,11 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
     if (isProcessing) return;
     setSelectedFiles([]);
     setAlerts([]);
+    if (isSplitTool) {
+      setPageSelection('');
+      setSourcePageCount(null);
+      setInspectionError(null);
+    }
     resetProcessing();
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -581,6 +671,60 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
         </div>
       )}
 
+      {/* Split PDF Page Selection Configuration */}
+      {isSplitTool && selectedFiles.length === 1 && (
+        <div className="glass-panel p-5 sm:p-6 mt-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 className="font-heading text-sm sm:text-base font-bold text-primary">
+                Select Pages to Extract
+              </h3>
+              <p className="text-xs text-secondary mt-0.5">
+                Specify page numbers or ranges to extract in original document order.
+              </p>
+            </div>
+            {isInspecting ? (
+              <span className="glass-pill px-3 py-1 text-xs text-accent flex items-center gap-1.5 self-start sm:self-auto">
+                <span className="h-3 w-3 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+                Inspecting pages...
+              </span>
+            ) : sourcePageCount !== null ? (
+              <GlassBadge variant="accent" size="md" className="self-start sm:self-auto">
+                {sourcePageCount} {sourcePageCount === 1 ? 'Page' : 'Pages'} Total
+              </GlassBadge>
+            ) : null}
+          </div>
+
+          {inspectionError ? (
+            <div className="p-3.5 rounded-xl border border-status-danger/30 bg-status-danger/10 text-status-danger text-xs sm:text-sm flex items-start gap-2.5">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+              <span>{inspectionError}</span>
+            </div>
+          ) : (
+            <GlassInput
+              id="split-page-selection"
+              label="Pages to Extract"
+              placeholder="e.g. 1-3, 5, 8-10"
+              value={pageSelection}
+              disabled={isProcessing || isInspecting || sourcePageCount === null}
+              onChange={(e) => setPageSelection(e.target.value)}
+              helperText={
+                rangeResult?.valid
+                  ? `Selected ${rangeResult.pageIndices.length} ${
+                      rangeResult.pageIndices.length === 1 ? 'page' : 'pages'
+                    }: ${rangeResult.pageIndices.map((i) => i + 1).join(', ')}`
+                  : 'Enter page numbers and/or ranges (e.g. 1-3, 5, 8-10).'
+              }
+              error={
+                pageSelection.trim().length > 0 && !rangeResult?.valid
+                  ? rangeResult?.error
+                  : undefined
+              }
+            />
+          )}
+        </div>
+      )}
+
       {/* Action Dock / Processing Section */}
       <div className="glass-panel p-6 sm:p-8 mt-8 border-t border-border-subtle">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -597,6 +741,18 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
                 ? `Processing ${selectedFiles.length} ${
                     selectedFiles.length === 1 ? 'file' : 'files'
                   } in local browser sandbox...`
+                : isSplitTool
+                ? isInspecting
+                  ? 'Inspecting document pages in local sandbox...'
+                  : inspectionError
+                  ? 'Cannot process: source document has inspection errors.'
+                  : !pageSelection.trim()
+                  ? 'Enter the pages you want to extract above.'
+                  : !rangeResult?.valid
+                  ? 'Please correct the page selection above.'
+                  : `Extracting ${rangeResult.pageIndices.length} ${
+                      rangeResult.pageIndices.length === 1 ? 'page' : 'pages'
+                    } in document order. Ready for client-side processing.`
                 : `${selectedFiles.length} ${
                     selectedFiles.length === 1 ? 'file' : 'files'
                   } loaded (${formatFileSize(totalSize)}). Ready for client-side processing.`}

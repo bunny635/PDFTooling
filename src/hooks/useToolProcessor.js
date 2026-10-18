@@ -19,9 +19,16 @@ export const EMPTY_OPTIONS = Object.freeze({});
  * @param {object} params.tool - Current tool descriptor from toolRegistry
  * @param {File[]} params.files - Currently selected files
  * @param {object} [params.options] - Tool-specific execution options
+ * @param {boolean} [params.isOptionsValid=true] - Whether options are valid and ready for processing
  * @param {object} [params.processorAdapter] - Optional dependency-injected test adapter
  */
-export function useToolProcessor({ tool, files = [], options = EMPTY_OPTIONS, processorAdapter = null }) {
+export function useToolProcessor({
+  tool,
+  files = [],
+  options = EMPTY_OPTIONS,
+  isOptionsValid = true,
+  processorAdapter = null,
+}) {
   const [status, setStatus] = useState('idle');
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -44,9 +51,12 @@ export function useToolProcessor({ tool, files = [], options = EMPTY_OPTIONS, pr
   // Concern 1: Separate input readiness from processor availability
   const minFiles = tool?.minFiles || (tool?.id === 'merge-pdf' ? 2 : 1);
   const hasRequiredInputs = Array.isArray(files) && files.length >= minFiles;
+  const optionsReady = isOptionsValid !== false;
 
-  // canProcess: true only when both input requirements AND processor availability are met, and not currently processing
-  const canProcess = Boolean(hasRequiredInputs && processorAvailable && status !== 'processing');
+  // canProcess: true only when input requirements, options validity AND processor availability are met, and not currently processing
+  const canProcess = Boolean(
+    hasRequiredInputs && processorAvailable && optionsReady && status !== 'processing'
+  );
 
   // Cleanup helper specifically for component-retained result URLs
   const cleanupRetainedUrls = useCallback(() => {
@@ -56,7 +66,9 @@ export function useToolProcessor({ tool, files = [], options = EMPTY_OPTIONS, pr
     retainedResultUrlsRef.current.clear();
   }, []);
 
-  // When files change, clear previous results, abort ongoing tasks, and compute status
+  const serializedOptions = JSON.stringify(options || {});
+
+  // When files or options change, clear previous results, abort ongoing tasks, and compute status
   useEffect(() => {
     // Invalidate any in-flight asynchronous operations
     executionTokenRef.current += 1;
@@ -70,13 +82,13 @@ export function useToolProcessor({ tool, files = [], options = EMPTY_OPTIONS, pr
     setResult(null);
     setError(null);
 
-    // Compute lifecycle status: remains idle unless both inputs and processor are available
-    if (hasRequiredInputs && processorAvailable) {
+    // Compute lifecycle status: remains idle unless inputs, processor, and options are available
+    if (hasRequiredInputs && processorAvailable && optionsReady) {
       setStatus('ready');
     } else {
       setStatus('idle');
     }
-  }, [files, hasRequiredInputs, processorAvailable, cleanupRetainedUrls]);
+  }, [files, serializedOptions, hasRequiredInputs, processorAvailable, optionsReady, cleanupRetainedUrls]);
 
   // Component unmount cleanup
   useEffect(() => {
@@ -97,6 +109,7 @@ export function useToolProcessor({ tool, files = [], options = EMPTY_OPTIONS, pr
     if (!canProcess) return;
     if (status === 'processing') return;
     if (!hasRequiredInputs) return;
+    if (!optionsReady) return;
     if (!processorAvailable || typeof processor?.execute !== 'function') return;
 
     setStatus('processing');
@@ -164,7 +177,7 @@ export function useToolProcessor({ tool, files = [], options = EMPTY_OPTIONS, pr
         abortControllerRef.current = null;
       }
     }
-  }, [canProcess, status, hasRequiredInputs, processorAvailable, processor, files, options, tool, cleanupRetainedUrls]);
+  }, [canProcess, status, hasRequiredInputs, optionsReady, processorAvailable, processor, files, options, tool, cleanupRetainedUrls]);
 
   // Trigger download of successful result
   const downloadResult = useCallback(() => {
@@ -182,8 +195,8 @@ export function useToolProcessor({ tool, files = [], options = EMPTY_OPTIONS, pr
     cleanupRetainedUrls();
     setResult(null);
     setError(null);
-    setStatus(hasRequiredInputs && processorAvailable ? 'ready' : 'idle');
-  }, [hasRequiredInputs, processorAvailable, cleanupRetainedUrls]);
+    setStatus(hasRequiredInputs && processorAvailable && optionsReady ? 'ready' : 'idle');
+  }, [hasRequiredInputs, processorAvailable, optionsReady, cleanupRetainedUrls]);
 
   return {
     status,

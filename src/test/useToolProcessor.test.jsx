@@ -5,6 +5,7 @@ import { useToolProcessor, EMPTY_OPTIONS } from '../hooks/useToolProcessor.js';
 describe('useToolProcessor Hook', () => {
   const mergeTool = { id: 'merge-pdf', slug: 'merge-pdf', name: 'Merge PDF', minFiles: 2 };
   const splitTool = { id: 'split-pdf', slug: 'split-pdf', name: 'Split PDF', minFiles: 1 };
+  const rotateTool = { id: 'rotate-pdf', slug: 'rotate-pdf', name: 'Rotate PDF', minFiles: 1 };
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -23,7 +24,7 @@ describe('useToolProcessor Hook', () => {
     expect(result.current.status).toBe('idle');
     expect(result.current.hasRequiredInputs).toBe(false);
     expect(result.current.isInputReady).toBe(false);
-    expect(result.current.isProcessorAvailable).toBe(true); // Merge PDF is now available in production
+    expect(result.current.isProcessorAvailable).toBe(true); // Merge PDF is available in production
     expect(result.current.canProcess).toBe(false); // cannot process because files.length < 2
     expect(result.current.minFiles).toBe(2);
   });
@@ -48,7 +49,7 @@ describe('useToolProcessor Hook', () => {
     expect(result.current.status).toBe('ready'); // Ready for client-side processing
   });
 
-  it('confirms unavailable tools meet input requirements with files but cannot process', () => {
+  it('confirms Split PDF with one valid file is available in production', () => {
     const mockFiles = [
       new File(['single'], 'document.pdf', { type: 'application/pdf' }),
     ];
@@ -56,6 +57,25 @@ describe('useToolProcessor Hook', () => {
     const { result } = renderHook(() =>
       useToolProcessor({
         tool: splitTool,
+        files: mockFiles,
+      })
+    );
+
+    expect(result.current.hasRequiredInputs).toBe(true);
+    expect(result.current.minFiles).toBe(1);
+    expect(result.current.isProcessorAvailable).toBe(true);
+    expect(result.current.canProcess).toBe(true);
+    expect(result.current.status).toBe('ready');
+  });
+
+  it('confirms unavailable tools meet input requirements with files but cannot process', () => {
+    const mockFiles = [
+      new File(['single'], 'document.pdf', { type: 'application/pdf' }),
+    ];
+
+    const { result } = renderHook(() =>
+      useToolProcessor({
+        tool: rotateTool,
         files: mockFiles,
       })
     );
@@ -74,7 +94,7 @@ describe('useToolProcessor Hook', () => {
 
     const { result } = renderHook(() =>
       useToolProcessor({
-        tool: splitTool, // Unavailable in production
+        tool: rotateTool, // Unavailable in production
         files: mockFiles,
       })
     );
@@ -284,6 +304,71 @@ describe('useToolProcessor Hook', () => {
         suggestedFilename: 'done.pdf',
       });
     });
+  });
+
+  it('gates processing readiness on isOptionsValid when inputs and processor are ready', () => {
+    const mockFiles = [new File(['doc'], 'doc.pdf', { type: 'application/pdf' })];
+
+    const { result, rerender } = renderHook(
+      ({ isOptionsValid }) =>
+        useToolProcessor({
+          tool: splitTool,
+          files: mockFiles,
+          isOptionsValid,
+        }),
+      { initialProps: { isOptionsValid: false } }
+    );
+
+    // Inputs ready, processor available, but options invalid -> cannot process, status idle
+    expect(result.current.hasRequiredInputs).toBe(true);
+    expect(result.current.isProcessorAvailable).toBe(true);
+    expect(result.current.canProcess).toBe(false);
+    expect(result.current.status).toBe('idle');
+
+    // Options become valid
+    rerender({ isOptionsValid: true });
+    expect(result.current.canProcess).toBe(true);
+    expect(result.current.status).toBe('ready');
+  });
+
+  it('invalidates previous result when options change', async () => {
+    const mockFiles = [new File(['doc'], 'doc.pdf', { type: 'application/pdf' })];
+    const mockBlob = new Blob(['%PDF-1.4 output'], { type: 'application/pdf' });
+    const mockExecute = vi.fn().mockResolvedValue({
+      blob: mockBlob,
+      suggestedFilename: 'out.pdf',
+    });
+
+    const mockAdapter = {
+      id: 'split-pdf',
+      isAvailable: true,
+      execute: mockExecute,
+    };
+
+    const { result, rerender } = renderHook(
+      ({ options }) =>
+        useToolProcessor({
+          tool: splitTool,
+          files: mockFiles,
+          options,
+          processorAdapter: mockAdapter,
+        }),
+      { initialProps: { options: { pageSelection: '1' } } }
+    );
+
+    await act(async () => {
+      await result.current.executeProcessing();
+    });
+
+    expect(result.current.status).toBe('success');
+    expect(result.current.result).not.toBeNull();
+
+    // User changes pageSelection option
+    rerender({ options: { pageSelection: '1-3' } });
+
+    // Result must be invalidated and status reset to ready
+    expect(result.current.status).toBe('ready');
+    expect(result.current.result).toBeNull();
   });
 
   it('revokes download URLs when component unmounts', () => {

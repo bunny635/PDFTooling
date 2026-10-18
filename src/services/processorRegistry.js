@@ -20,10 +20,13 @@ export const PROCESSOR_REGISTRY = Object.freeze({
   'split-pdf': Object.freeze({
     id: 'split-pdf',
     name: 'Split PDF',
-    isAvailable: false,
-    status: 'unavailable',
-    reason: 'Processing engine scheduled for implementation in upcoming ticket.',
-    execute: null,
+    isAvailable: true,
+    status: 'available',
+    reason: 'Pure client-side in-memory PDF page extraction engine.',
+    execute: async (params) => {
+      const { splitPdf } = await import('../processors/splitPdf.js');
+      return splitPdf(params);
+    },
   }),
   'rotate-pdf': Object.freeze({
     id: 'rotate-pdf',
@@ -77,7 +80,6 @@ export function getToolProcessor(toolId, customAdapters) {
 
 /**
  * Checks whether a tool processor is currently implemented and ready to execute.
- * In production, returns false for all tools.
  *
  * @param {string} toolId
  * @param {Record<string, object>} [customAdapters] - Optional dependency-injected test adapters
