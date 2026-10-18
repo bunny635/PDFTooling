@@ -127,7 +127,24 @@ describe('mergePdf Processor', () => {
     );
   });
 
-  it('handles password-protected or encrypted PDF errors with accurate classification', async () => {
+  it('rejects genuine binary encrypted PDF fixture without bypassing encryption', async () => {
+    const validFile = await createTestPdfFile({ baseDimension: 100, name: 'doc1.pdf' });
+
+    // Genuine syntactically valid PDF binary with an active /Encrypt standard dictionary
+    const genuineEncryptedRaw =
+      '%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] >>\nendobj\n4 0 obj\n<< /Filter /Standard /V 1 /R 2 /O (12345678901234567890123456789012) /U (12345678901234567890123456789012) /P -4 >>\nendobj\nxref\n0 5\n0000000000 65535 f \n0000000009 00000 n \n0000000058 00000 n \n0000000115 00000 n \n0000000188 00000 n \ntrailer\n<< /Root 1 0 R /Encrypt 4 0 R /Size 5 >>\nstartxref\n296\n%%EOF';
+
+    const genuineEncryptedFile = new File([genuineEncryptedRaw], 'genuine-encrypted.pdf', {
+      type: 'application/pdf',
+      lastModified: Date.now(),
+    });
+
+    await expect(mergePdf({ files: [validFile, genuineEncryptedFile] })).rejects.toThrow(
+      'File "genuine-encrypted.pdf" is password-protected or encrypted. Password-protected PDFs are not supported.'
+    );
+  });
+
+  it('handles password-protected or encrypted PDF errors with accurate classification (mocked fallback verification)', async () => {
     const validFile = await createTestPdfFile({ baseDimension: 100, name: 'doc1.pdf' });
 
     // Create a mock encrypted error scenario

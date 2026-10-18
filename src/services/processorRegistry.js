@@ -1,9 +1,8 @@
-import { mergePdf } from '../processors/mergePdf.js';
-
 /**
  * Immutable Production Processor Registry
  * Defines execution metadata and availability for all 6 MVP tools.
- * Merge PDF is active with client-side pdf-lib engine; other processors remain unavailable.
+ * Merge PDF is active with client-side pdf-lib engine (lazily loaded on demand).
+ * Other processors remain permanently unavailable until their dedicated implementation tickets.
  */
 
 export const PROCESSOR_REGISTRY = Object.freeze({
@@ -13,7 +12,10 @@ export const PROCESSOR_REGISTRY = Object.freeze({
     isAvailable: true,
     status: 'available',
     reason: 'Pure client-side in-memory PDF merge engine.',
-    execute: mergePdf,
+    execute: async (params) => {
+      const { mergePdf } = await import('../processors/mergePdf.js');
+      return mergePdf(params);
+    },
   }),
   'split-pdf': Object.freeze({
     id: 'split-pdf',

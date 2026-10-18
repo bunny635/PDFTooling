@@ -66,4 +66,14 @@ describe('processorRegistry', () => {
     expect(prod.execute).toBeNull();
     expect(isProcessorAvailable('split-pdf')).toBe(false);
   });
+
+  it('lazily loads and executes mergePdf upon execute invocation', async () => {
+    const mergeProc = getToolProcessor('merge-pdf');
+    expect(typeof mergeProc.execute).toBe('function');
+
+    // Calling execute dynamically imports mergePdf and enforces its contract
+    await expect(mergeProc.execute({ files: [] })).rejects.toThrow(
+      /at least two pdf files are required to merge/i
+    );
+  });
 });
