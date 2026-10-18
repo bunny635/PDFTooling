@@ -74,8 +74,9 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
   const {
     status,
     isProcessing,
-    isInputReady,
+    hasRequiredInputs,
     isProcessorAvailable,
+    canProcess,
     result,
     error: processingError,
     minFiles,
@@ -540,7 +541,7 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
               {tool.name} Processing
             </h3>
             <p className="text-xs text-secondary mt-0.5">
-              {!isInputReady
+              {!hasRequiredInputs
                 ? minFiles > 1
                   ? `Select at least ${minFiles} files to enable ${actionLabel.toLowerCase()}.`
                   : `Select a file above to enable workspace processing.`
@@ -559,7 +560,7 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
             variant="primary"
             size="lg"
             isLoading={isProcessing}
-            disabled={!isProcessorAvailable || !isInputReady || isProcessing}
+            disabled={!canProcess}
             icon={!isProcessorAvailable ? Lock : undefined}
             onClick={executeProcessing}
             className="w-full sm:w-auto"

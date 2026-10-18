@@ -5,6 +5,8 @@ import {
   createDownloadUrl,
   revokeDownloadUrl,
   triggerBlobDownload,
+  getActiveDownloadCount,
+  cleanupPendingDownloads,
 } from '../utils/downloadManager.js';
 
 describe('downloadManager Utilities', () => {
@@ -155,6 +157,46 @@ describe('downloadManager Utilities', () => {
       // Advance timers by 1000ms
       vi.advanceTimersByTime(1000);
       expect(revokeSpy).toHaveBeenCalledWith('blob:http://localhost/download-test');
+
+      vi.useRealTimers();
+    });
+
+    it('handles repeated downloads with independent delayed revocations and tracking', () => {
+      vi.useFakeTimers();
+
+      cleanupPendingDownloads();
+      let urlCount = 0;
+      vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:http://localhost/download-test-${++urlCount}`);
+      const revokeSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+      const originalCreateElement = document.createElement.bind(document);
+      vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+        const el = originalCreateElement(tag);
+        if (tag === 'a') {
+          el.click = vi.fn();
+        }
+        return el;
+      });
+
+      const blob1 = new Blob(['doc 1'], { type: 'application/pdf' });
+      const blob2 = new Blob(['doc 2'], { type: 'application/pdf' });
+
+      // Trigger two downloads in succession
+      const res1 = triggerBlobDownload(blob1, 'first.pdf', { revokeDelayMs: 2000 });
+      const res2 = triggerBlobDownload(blob2, 'second.pdf', { revokeDelayMs: 2000 });
+
+      expect(res1.success).toBe(true);
+      expect(res2.success).toBe(true);
+      expect(getActiveDownloadCount()).toBe(2);
+
+      // Initially neither is revoked synchronously
+      expect(revokeSpy).not.toHaveBeenCalled();
+
+      // Advance timers by 2000ms
+      vi.advanceTimersByTime(2000);
+
+      expect(revokeSpy).toHaveBeenCalledTimes(2);
+      expect(getActiveDownloadCount()).toBe(0);
 
       vi.useRealTimers();
     });

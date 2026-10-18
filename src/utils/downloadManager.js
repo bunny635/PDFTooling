@@ -148,21 +148,24 @@ export function revokeDownloadUrl(url) {
   }
 }
 
+// Internal registry tracking active short-lived download jobs: url -> { timerId, createdAt }
+const activeDownloadJobs = new Map();
+
 /**
  * Triggers a real browser file download using a temporary anchor element.
  * Refinement: Does NOT revoke the URL synchronously immediately after clicking,
  * allowing browser download engines sufficient time to read the Blob.
- * Schedules revocation asynchronously while also returning the URL for component cleanup.
+ * Schedules revocation asynchronously while also tracking active download jobs.
  *
  * @param {Blob} blob
  * @param {string} suggestedFilename
  * @param {object} [options]
- * @param {number} [options.revokeDelayMs=1000]
+ * @param {number} [options.revokeDelayMs=2000]
  * @param {string} [options.expectedExtension='.pdf']
  * @returns {{ success: boolean, filename: string, url: string }}
  */
 export function triggerBlobDownload(blob, suggestedFilename, options = {}) {
-  const { revokeDelayMs = 1000, expectedExtension = '.pdf' } = options;
+  const { revokeDelayMs = 2000, expectedExtension = '.pdf' } = options;
 
   const validation = validateOutputBlob(blob);
   if (!validation.valid) {
@@ -189,9 +192,12 @@ export function triggerBlobDownload(blob, suggestedFilename, options = {}) {
 
     // Asynchronously schedule revocation so the browser download manager can consume the blob
     if (revokeDelayMs > 0) {
-      setTimeout(() => {
+      const timerId = setTimeout(() => {
         revokeDownloadUrl(url);
+        activeDownloadJobs.delete(url);
       }, revokeDelayMs);
+
+      activeDownloadJobs.set(url, { timerId, createdAt: Date.now() });
     }
   }
 
@@ -200,4 +206,24 @@ export function triggerBlobDownload(blob, suggestedFilename, options = {}) {
     filename: safeFilename,
     url,
   };
+}
+
+/**
+ * Returns the count of active short-lived download jobs currently pending revocation.
+ * @returns {number}
+ */
+export function getActiveDownloadCount() {
+  return activeDownloadJobs.size;
+}
+
+/**
+ * Clears and immediately revokes all pending download jobs.
+ * Used for testing and emergency teardown.
+ */
+export function cleanupPendingDownloads() {
+  for (const [url, job] of activeDownloadJobs.entries()) {
+    clearTimeout(job.timerId);
+    revokeDownloadUrl(url);
+  }
+  activeDownloadJobs.clear();
 }

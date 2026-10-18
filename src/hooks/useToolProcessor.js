@@ -11,7 +11,7 @@ import {
 /**
  * useToolProcessor
  * Reusable lifecycle hook managing tool processing states (idle, ready, processing, success, error),
- * input readiness, execution tokens, unmount guards, automatic URL cleanup, and download triggering.
+ * input readiness separation, execution tokens, unmount guards, automatic URL cleanup, and download triggering.
  *
  * @param {object} params
  * @param {object} params.tool - Current tool descriptor from toolRegistry
@@ -26,7 +26,7 @@ export function useToolProcessor({ tool, files = [], options = {}, processorAdap
 
   const executionTokenRef = useRef(0);
   const isMountedRef = useRef(true);
-  const activeUrlsRef = useRef(new Set());
+  const retainedResultUrlsRef = useRef(new Set());
   const abortControllerRef = useRef(null);
 
   // Derive tool processor and availability (immutable production registry or injected test adapter)
@@ -39,16 +39,19 @@ export function useToolProcessor({ tool, files = [], options = {}, processorAdap
     processorAdapter ? { [tool.id]: processorAdapter } : undefined
   );
 
-  // Refinement 3: Separate input readiness from processor availability
+  // Concern 1: Separate input readiness from processor availability
   const minFiles = tool?.minFiles || (tool?.id === 'merge-pdf' ? 2 : 1);
-  const isInputReady = Array.isArray(files) && files.length >= minFiles;
+  const hasRequiredInputs = Array.isArray(files) && files.length >= minFiles;
 
-  // Cleanup helper for all registered active URLs
-  const cleanupUrls = useCallback(() => {
-    activeUrlsRef.current.forEach((url) => {
+  // canProcess: true only when both input requirements AND processor availability are met, and not currently processing
+  const canProcess = Boolean(hasRequiredInputs && processorAvailable && status !== 'processing');
+
+  // Cleanup helper specifically for component-retained result URLs
+  const cleanupRetainedUrls = useCallback(() => {
+    retainedResultUrlsRef.current.forEach((url) => {
       revokeDownloadUrl(url);
     });
-    activeUrlsRef.current.clear();
+    retainedResultUrlsRef.current.clear();
   }, []);
 
   // When files change, clear previous results, abort ongoing tasks, and compute status
@@ -60,18 +63,18 @@ export function useToolProcessor({ tool, files = [], options = {}, processorAdap
       abortControllerRef.current = null;
     }
 
-    // Clean up previously created download URLs
-    cleanupUrls();
+    // Clean up retained result URLs from previous execution
+    cleanupRetainedUrls();
     setResult(null);
     setError(null);
 
-    // Compute base status
-    if (isInputReady && processorAvailable) {
+    // Compute lifecycle status: remains idle unless both inputs and processor are available
+    if (hasRequiredInputs && processorAvailable) {
       setStatus('ready');
     } else {
       setStatus('idle');
     }
-  }, [files, isInputReady, processorAvailable, cleanupUrls]);
+  }, [files, hasRequiredInputs, processorAvailable, cleanupRetainedUrls]);
 
   // Component unmount cleanup
   useEffect(() => {
@@ -82,22 +85,23 @@ export function useToolProcessor({ tool, files = [], options = {}, processorAdap
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-      cleanupUrls();
+      cleanupRetainedUrls();
     };
-  }, [cleanupUrls]);
+  }, [cleanupRetainedUrls]);
 
   // Execute processing
   const executeProcessing = useCallback(async () => {
-    // Guards
+    // Primary action and programmatic invocation guards
+    if (!canProcess) return;
     if (status === 'processing') return;
-    if (!isInputReady) return;
+    if (!hasRequiredInputs) return;
     if (!processorAvailable || typeof processor?.execute !== 'function') return;
 
     setStatus('processing');
     setError(null);
 
     // Clean up any previously held result URLs before starting new run
-    cleanupUrls();
+    cleanupRetainedUrls();
     setResult(null);
 
     // Increment token and initialize advisory AbortController
@@ -131,9 +135,9 @@ export function useToolProcessor({ tool, files = [], options = {}, processorAdap
         fallback: `${tool.slug}-result.pdf`,
       });
 
-      // Create object URL
+      // Create retained object URL for result state
       const url = createDownloadUrl(output.blob);
-      activeUrlsRef.current.add(url);
+      retainedResultUrlsRef.current.add(url);
 
       setResult({
         blob: output.blob,
@@ -149,7 +153,7 @@ export function useToolProcessor({ tool, files = [], options = {}, processorAdap
       }
 
       // Cleanup any URLs created during this attempt
-      cleanupUrls();
+      cleanupRetainedUrls();
       setResult(null);
       setError(err?.message || 'Processing failed. Please check your files and try again.');
       setStatus('error');
@@ -158,7 +162,7 @@ export function useToolProcessor({ tool, files = [], options = {}, processorAdap
         abortControllerRef.current = null;
       }
     }
-  }, [status, isInputReady, processorAvailable, processor, files, options, tool, cleanupUrls]);
+  }, [canProcess, status, hasRequiredInputs, processorAvailable, processor, files, options, tool, cleanupRetainedUrls]);
 
   // Trigger download of successful result
   const downloadResult = useCallback(() => {
@@ -173,17 +177,19 @@ export function useToolProcessor({ tool, files = [], options = {}, processorAdap
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
-    cleanupUrls();
+    cleanupRetainedUrls();
     setResult(null);
     setError(null);
-    setStatus(isInputReady && processorAvailable ? 'ready' : 'idle');
-  }, [isInputReady, processorAvailable, cleanupUrls]);
+    setStatus(hasRequiredInputs && processorAvailable ? 'ready' : 'idle');
+  }, [hasRequiredInputs, processorAvailable, cleanupRetainedUrls]);
 
   return {
     status,
     isProcessing: status === 'processing',
-    isInputReady,
+    hasRequiredInputs,
+    isInputReady: hasRequiredInputs, // backwards-compatible alias
     isProcessorAvailable: processorAvailable,
+    canProcess,
     result,
     error,
     minFiles,

@@ -21,18 +21,20 @@ describe('useToolProcessor Hook', () => {
     );
 
     expect(result.current.status).toBe('idle');
+    expect(result.current.hasRequiredInputs).toBe(false);
     expect(result.current.isInputReady).toBe(false);
     expect(result.current.isProcessorAvailable).toBe(false);
+    expect(result.current.canProcess).toBe(false);
     expect(result.current.minFiles).toBe(2);
   });
 
-  it('separates input readiness from processor availability (Refinement 3)', () => {
+  it('confirms Merge PDF with two valid files meets input requirements but cannot process while unavailable', () => {
     const mockFiles = [
       new File(['f1'], 'file1.pdf', { type: 'application/pdf' }),
       new File(['f2'], 'file2.pdf', { type: 'application/pdf' }),
     ];
 
-    // In production without an adapter: input is ready, but processor is unavailable
+    // In production without an adapter: input requirements are met, but processor is unavailable
     const { result } = renderHook(() =>
       useToolProcessor({
         tool: mergeTool,
@@ -40,9 +42,52 @@ describe('useToolProcessor Hook', () => {
       })
     );
 
-    expect(result.current.isInputReady).toBe(true);
+    expect(result.current.hasRequiredInputs).toBe(true);
     expect(result.current.isProcessorAvailable).toBe(false);
-    expect(result.current.status).toBe('idle'); // Remains idle because processor is unavailable
+    expect(result.current.canProcess).toBe(false);
+    expect(result.current.status).toBe('idle'); // Lifecycle remains idle when processor is unavailable
+  });
+
+  it('confirms single-file tools meet input requirements with one file', () => {
+    const mockFiles = [
+      new File(['single'], 'document.pdf', { type: 'application/pdf' }),
+    ];
+
+    const { result } = renderHook(() =>
+      useToolProcessor({
+        tool: splitTool,
+        files: mockFiles,
+      })
+    );
+
+    expect(result.current.hasRequiredInputs).toBe(true);
+    expect(result.current.minFiles).toBe(1);
+    expect(result.current.isProcessorAvailable).toBe(false);
+    expect(result.current.canProcess).toBe(false);
+  });
+
+  it('ensures no unavailable processor can execute even if called programmatically', async () => {
+    const mockFiles = [
+      new File(['f1'], 'file1.pdf', { type: 'application/pdf' }),
+      new File(['f2'], 'file2.pdf', { type: 'application/pdf' }),
+    ];
+
+    const { result } = renderHook(() =>
+      useToolProcessor({
+        tool: mergeTool,
+        files: mockFiles,
+      })
+    );
+
+    expect(result.current.canProcess).toBe(false);
+
+    // Attempting execution when canProcess is false must be completely ignored
+    await act(async () => {
+      await result.current.executeProcessing();
+    });
+
+    expect(result.current.status).toBe('idle');
+    expect(result.current.result).toBeNull();
   });
 
   it('transitions to ready state when input is ready and processor adapter is available', () => {
@@ -65,8 +110,10 @@ describe('useToolProcessor Hook', () => {
       })
     );
 
+    expect(result.current.hasRequiredInputs).toBe(true);
     expect(result.current.isInputReady).toBe(true);
     expect(result.current.isProcessorAvailable).toBe(true);
+    expect(result.current.canProcess).toBe(true);
     expect(result.current.status).toBe('ready');
   });
 
