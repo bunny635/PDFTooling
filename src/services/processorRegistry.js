@@ -64,10 +64,13 @@ export const PROCESSOR_REGISTRY = Object.freeze({
   'jpg-to-pdf': Object.freeze({
     id: 'jpg-to-pdf',
     name: 'JPG to PDF',
-    isAvailable: false,
-    status: 'unavailable',
-    reason: 'Processing engine scheduled for implementation in upcoming ticket.',
-    execute: null,
+    isAvailable: true,
+    status: 'available',
+    reason: 'Pure client-side in-memory JPG to PDF conversion engine.',
+    execute: async (params) => {
+      const { jpgToPdf } = await import('../processors/jpgToPdf.js');
+      return jpgToPdf(params);
+    },
   }),
 });
 

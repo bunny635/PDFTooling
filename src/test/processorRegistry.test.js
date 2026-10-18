@@ -14,7 +14,7 @@ describe('processorRegistry', () => {
     });
   });
 
-  it('marks merge-pdf, split-pdf, rotate-pdf, delete-pages, and reorder-pages as available and jpg-to-pdf as unavailable in production', () => {
+  it('marks all six tools as available and functional in production', () => {
     // 1. Merge PDF is active and functional
     const mergeProc = getToolProcessor('merge-pdf');
     expect(mergeProc).toBeDefined();
@@ -60,17 +60,14 @@ describe('processorRegistry', () => {
     expect(typeof reorderProc.execute).toBe('function');
     expect(isProcessorAvailable('reorder-pages')).toBe(true);
 
-    // 6. The remaining tool (jpg-to-pdf) remains unavailable placeholder
-    const unavailableSlugs = ['jpg-to-pdf'];
-    unavailableSlugs.forEach((slug) => {
-      const proc = getToolProcessor(slug);
-      expect(proc).toBeDefined();
-      expect(proc.id).toBe(slug);
-      expect(proc.isAvailable).toBe(false);
-      expect(proc.status).toBe('unavailable');
-      expect(proc.execute).toBeNull();
-      expect(isProcessorAvailable(slug)).toBe(false);
-    });
+    // 6. JPG to PDF is active and functional
+    const jpgProc = getToolProcessor('jpg-to-pdf');
+    expect(jpgProc).toBeDefined();
+    expect(jpgProc.id).toBe('jpg-to-pdf');
+    expect(jpgProc.isAvailable).toBe(true);
+    expect(jpgProc.status).toBe('available');
+    expect(typeof jpgProc.execute).toBe('function');
+    expect(isProcessorAvailable('jpg-to-pdf')).toBe(true);
   });
 
   it('returns undefined for unknown tool IDs', () => {
@@ -83,24 +80,23 @@ describe('processorRegistry', () => {
   it('supports dependency-injected test adapters without mutating the production registry', () => {
     const mockExecute = async () => ({ blob: new Blob(['mock']), suggestedFilename: 'mock.pdf' });
     const customAdapters = {
-      'jpg-to-pdf': {
-        id: 'jpg-to-pdf',
+      'custom-tool': {
+        id: 'custom-tool',
         isAvailable: true,
         execute: mockExecute,
       },
     };
 
     // With injected adapter
-    const injected = getToolProcessor('jpg-to-pdf', customAdapters);
+    const injected = getToolProcessor('custom-tool', customAdapters);
     expect(injected.isAvailable).toBe(true);
     expect(injected.execute).toBe(mockExecute);
-    expect(isProcessorAvailable('jpg-to-pdf', customAdapters)).toBe(true);
+    expect(isProcessorAvailable('custom-tool', customAdapters)).toBe(true);
 
-    // Production registry remains unaltered (jpg-to-pdf is still unavailable in prod)
-    const prod = getToolProcessor('jpg-to-pdf');
-    expect(prod.isAvailable).toBe(false);
-    expect(prod.execute).toBeNull();
-    expect(isProcessorAvailable('jpg-to-pdf')).toBe(false);
+    // Production registry remains unaltered (custom-tool does not exist in prod)
+    const prod = getToolProcessor('custom-tool');
+    expect(prod).toBeUndefined();
+    expect(isProcessorAvailable('custom-tool')).toBe(false);
   });
 
   it('lazily loads and executes mergePdf upon execute invocation', async () => {
@@ -150,6 +146,16 @@ describe('processorRegistry', () => {
     // Calling execute dynamically imports reorderPdf and enforces its contract
     await expect(reorderProc.execute({ files: [] })).rejects.toThrow(
       /requires exactly one source document/i
+    );
+  });
+
+  it('lazily loads and executes jpgToPdf upon execute invocation', async () => {
+    const jpgProc = getToolProcessor('jpg-to-pdf');
+    expect(typeof jpgProc.execute).toBe('function');
+
+    // Calling execute dynamically imports jpgToPdf and enforces its contract
+    await expect(jpgProc.execute({ files: [] })).rejects.toThrow(
+      /at least one jpeg image is required/i
     );
   });
 });

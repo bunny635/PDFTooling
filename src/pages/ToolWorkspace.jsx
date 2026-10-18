@@ -10,6 +10,8 @@ import {
   RotateCw,
   Trash2,
   ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   ShieldCheck,
   AlertCircle,
   AlertTriangle,
@@ -105,7 +107,12 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
   const isRotateTool = tool.id === 'rotate-pdf';
   const isDeleteTool = tool.id === 'delete-pages';
   const isReorderTool = tool.id === 'reorder-pages';
+  const isJpgTool = tool.id === 'jpg-to-pdf';
   const needsPageInspection = isSplitTool || isRotateTool || isDeleteTool || isReorderTool;
+
+  // JPG to PDF specific options
+  const [jpgPageSize, setJpgPageSize] = useState('a4-portrait');
+  const [jpgMargin, setJpgMargin] = useState('standard');
 
   // Prevent browser default navigation when files are accidentally dropped outside the dropzone
   useEffect(() => {
@@ -242,8 +249,13 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
     if (isReorderTool) {
       return Boolean(sourcePageCount !== null && orderResult?.valid);
     }
+    if (isJpgTool) {
+      const validPageSizes = ['original', 'a4-portrait', 'a4-landscape', 'a4-auto'];
+      const validMargins = ['standard', 'none'];
+      return validPageSizes.includes(jpgPageSize) && validMargins.includes(jpgMargin);
+    }
     return true;
-  }, [isSplitTool, isRotateTool, isDeleteTool, isReorderTool, sourcePageCount, rangeResult, rotationAngle, rotationScope, deleteResult, orderResult]);
+  }, [isSplitTool, isRotateTool, isDeleteTool, isReorderTool, isJpgTool, sourcePageCount, rangeResult, rotationAngle, rotationScope, deleteResult, orderResult, jpgPageSize, jpgMargin]);
 
   // When scope is All pages for Rotate, exclude the inactive page-selection value from effective processing options
   // so that hidden input changes do not unnecessarily invalidate results.
@@ -261,8 +273,14 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
     if (isReorderTool) {
       return { pageOrder };
     }
+    if (isJpgTool) {
+      return {
+        pageSize: jpgPageSize,
+        margin: jpgMargin,
+      };
+    }
     return undefined;
-  }, [isSplitTool, isRotateTool, isDeleteTool, isReorderTool, pageSelection, pageOrder, rotationAngle, rotationScope]);
+  }, [isSplitTool, isRotateTool, isDeleteTool, isReorderTool, isJpgTool, pageSelection, pageOrder, rotationAngle, rotationScope, jpgPageSize, jpgMargin]);
 
   // Hook managing processing lifecycle (idle, ready, processing, success, error)
   const {
@@ -288,7 +306,6 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
   const ToolIcon = TOOL_ICONS[tool.iconName] || FileText;
   const categoryLabel = CATEGORY_LABELS[tool.category] || tool.category;
   const actionLabel = ACTION_LABELS[tool.id] || tool.name;
-  const isJpgTool = tool.id === 'jpg-to-pdf';
   const acceptedFormatsText = isJpgTool ? '.jpg, .jpeg' : '.pdf';
   const acceptedInputAttr = isJpgTool ? '.jpg,.jpeg,image/jpeg' : '.pdf,application/pdf';
 
@@ -456,6 +473,10 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
         setRotationScope('all');
       }
     }
+    if (isJpgTool) {
+      setJpgPageSize('a4-portrait');
+      setJpgMargin('standard');
+    }
     resetProcessing();
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -484,6 +505,29 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
       seq[sourcePageCount - 1] = 1;
       setPageOrder(seq.join(', '));
     }
+  };
+
+  const handleMoveFileUp = (index) => {
+    if (isProcessing || index <= 0) return;
+    setSelectedFiles((prev) => {
+      const next = [...prev];
+      const temp = next[index - 1];
+      next[index - 1] = next[index];
+      next[index] = temp;
+      return next;
+    });
+  };
+
+  const handleMoveFileDown = (index) => {
+    if (isProcessing) return;
+    setSelectedFiles((prev) => {
+      if (index >= prev.length - 1) return prev;
+      const next = [...prev];
+      const temp = next[index + 1];
+      next[index + 1] = next[index];
+      next[index] = temp;
+      return next;
+    });
   };
 
   return (
@@ -733,6 +777,14 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
             </p>
           )}
 
+          {/* JPG to PDF File Ordering Notice */}
+          {isJpgTool && (
+            <p className="text-xs text-secondary mb-3.5 flex items-center gap-1.5 font-medium">
+              <Info className="h-3.5 w-3.5 text-accent shrink-0" aria-hidden="true" />
+              <span>Images will be converted into PDF pages in the order shown below. Use the move buttons to arrange sequence.</span>
+            </p>
+          )}
+
           <div className="space-y-2.5">
             {selectedFiles.map((file, idx) => {
               const fileExt = (file.name.split('.').pop() || 'FILE').toUpperCase();
@@ -742,6 +794,11 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
                   className="p-3.5 sm:p-4 flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-3 min-w-0">
+                    {isJpgTool && (
+                      <span className="text-xs font-bold text-accent px-1.5 py-0.5 rounded-md bg-accent/10 shrink-0">
+                        #{idx + 1}
+                      </span>
+                    )}
                     <div className="h-10 w-10 rounded-xl bg-accent/10 flex items-center justify-center text-accent shrink-0">
                       {isJpgTool ? (
                         <Image className="h-5 w-5" aria-hidden="true" />
@@ -764,16 +821,42 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
                     </div>
                   </div>
 
-                  <GlassButton
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    icon={X}
-                    disabled={isProcessing}
-                    onClick={() => handleRemoveFile(idx)}
-                    aria-label={`Remove ${file.name}`}
-                    className="min-h-[44px] min-w-[44px] text-secondary hover:text-status-danger p-2 shrink-0"
-                  />
+                  <div className="flex items-center gap-1 shrink-0">
+                    {isJpgTool && selectedFiles.length > 1 && (
+                      <>
+                        <GlassButton
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          icon={ArrowUp}
+                          disabled={isProcessing || idx === 0}
+                          onClick={() => handleMoveFileUp(idx)}
+                          aria-label={`Move ${file.name} up`}
+                          className="min-h-[36px] min-w-[36px] p-2 text-secondary hover:text-primary disabled:opacity-30"
+                        />
+                        <GlassButton
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          icon={ArrowDown}
+                          disabled={isProcessing || idx === selectedFiles.length - 1}
+                          onClick={() => handleMoveFileDown(idx)}
+                          aria-label={`Move ${file.name} down`}
+                          className="min-h-[36px] min-w-[36px] p-2 text-secondary hover:text-primary disabled:opacity-30"
+                        />
+                      </>
+                    )}
+                    <GlassButton
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      icon={X}
+                      disabled={isProcessing}
+                      onClick={() => handleRemoveFile(idx)}
+                      aria-label={`Remove ${file.name}`}
+                      className="min-h-[44px] min-w-[44px] text-secondary hover:text-status-danger p-2 shrink-0"
+                    />
+                  </div>
                 </GlassCard>
               );
             })}
@@ -1117,6 +1200,85 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
         </div>
       )}
 
+      {/* JPG to PDF Page Layout Configuration */}
+      {isJpgTool && selectedFiles.length >= 1 && (
+        <div className="glass-panel p-5 sm:p-6 mt-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 className="font-heading text-sm sm:text-base font-bold text-primary">
+                Configure PDF Pages
+              </h3>
+              <p className="text-xs text-secondary mt-0.5">
+                Select your desired page orientation and margins.
+              </p>
+            </div>
+            <GlassBadge variant="accent" size="md" className="self-start sm:self-auto">
+              {selectedFiles.length} {selectedFiles.length === 1 ? 'Image' : 'Images'} Selected
+            </GlassBadge>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <span className="text-xs font-semibold text-secondary block mb-2">
+                Page Size &amp; Orientation
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { id: 'original', label: 'Original Size', desc: 'Fit page to image' },
+                  { id: 'a4-portrait', label: 'A4 Portrait', desc: '595 × 842 pt' },
+                  { id: 'a4-landscape', label: 'A4 Landscape', desc: '842 × 595 pt' },
+                  { id: 'a4-auto', label: 'A4 Auto', desc: 'Per-image orientation' },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    disabled={isProcessing}
+                    onClick={() => setJpgPageSize(opt.id)}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      jpgPageSize === opt.id
+                        ? 'border-accent bg-accent/15 text-primary shadow-xs'
+                        : 'border-border-subtle bg-surface-muted/40 text-secondary hover:text-primary hover:border-border-subtle/80'
+                    }`}
+                  >
+                    <span className="font-heading font-semibold text-xs sm:text-sm block">
+                      {opt.label}
+                    </span>
+                    <span className="text-[11px] text-secondary mt-0.5 block opacity-80">
+                      {opt.desc}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {jpgPageSize !== 'original' && (
+              <div>
+                <span className="text-xs font-semibold text-secondary block mb-2">
+                  Page Margins
+                </span>
+                <div className="flex gap-2">
+                  {[
+                    { id: 'standard', label: 'Standard Margins (20 pt)' },
+                    { id: 'none', label: 'Borderless (0 pt)' },
+                  ].map((opt) => (
+                    <GlassButton
+                      key={opt.id}
+                      type="button"
+                      variant={jpgMargin === opt.id ? 'primary' : 'ghost'}
+                      size="sm"
+                      disabled={isProcessing}
+                      onClick={() => setJpgMargin(opt.id)}
+                    >
+                      {opt.label}
+                    </GlassButton>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Action Dock / Processing Section */}
       <div className="glass-panel p-6 sm:p-8 mt-8 border-t border-border-subtle">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -1183,6 +1345,28 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
                   : `Reordering ${orderResult.pageIndices.length} ${
                       orderResult.pageIndices.length === 1 ? 'page' : 'pages'
                     } (${orderResult.pageIndices.map((i) => i + 1).join(' → ')}). Ready for client-side processing.`
+                : isJpgTool
+                ? isProcessing
+                  ? `Converting ${selectedFiles.length} ${
+                      selectedFiles.length === 1 ? 'image' : 'images'
+                    } to PDF in local browser sandbox...`
+                  : `Converting ${selectedFiles.length} ${
+                      selectedFiles.length === 1 ? 'image' : 'images'
+                    } to PDF (${
+                      jpgPageSize === 'original'
+                        ? 'Original Dimensions'
+                        : jpgPageSize === 'a4-portrait'
+                        ? 'A4 Portrait'
+                        : jpgPageSize === 'a4-landscape'
+                        ? 'A4 Landscape'
+                        : 'A4 Auto Orientation'
+                    }${
+                      jpgPageSize !== 'original'
+                        ? jpgMargin === 'none'
+                          ? ', Borderless'
+                          : ', 20 pt margins'
+                        : ''
+                    }). Ready for client-side processing.`
                 : `${selectedFiles.length} ${
                     selectedFiles.length === 1 ? 'file' : 'files'
                   } loaded (${formatFileSize(totalSize)}). Ready for client-side processing.`}

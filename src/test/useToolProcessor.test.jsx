@@ -128,14 +128,34 @@ describe('useToolProcessor Hook', () => {
     expect(result.current.status).toBe('ready');
   });
 
+  it('confirms JPG to PDF with one valid file is available in production', () => {
+    const mockFiles = [
+      new File(['single'], 'image.jpg', { type: 'image/jpeg' }),
+    ];
+
+    const { result } = renderHook(() =>
+      useToolProcessor({
+        tool: jpgTool,
+        files: mockFiles,
+      })
+    );
+
+    expect(result.current.hasRequiredInputs).toBe(true);
+    expect(result.current.minFiles).toBe(1);
+    expect(result.current.isProcessorAvailable).toBe(true);
+    expect(result.current.canProcess).toBe(true);
+    expect(result.current.status).toBe('ready');
+  });
+
   it('confirms unavailable tools meet input requirements with files but cannot process', () => {
+    const unavailableTool = { id: 'unsupported-tool', slug: 'unsupported-tool', name: 'Unsupported Tool', minFiles: 1 };
     const mockFiles = [
       new File(['single'], 'document.pdf', { type: 'application/pdf' }),
     ];
 
     const { result } = renderHook(() =>
       useToolProcessor({
-        tool: jpgTool,
+        tool: unavailableTool,
         files: mockFiles,
       })
     );
@@ -148,13 +168,14 @@ describe('useToolProcessor Hook', () => {
   });
 
   it('ensures no unavailable processor can execute even if called programmatically', async () => {
+    const unavailableTool = { id: 'unsupported-tool', slug: 'unsupported-tool', name: 'Unsupported Tool', minFiles: 1 };
     const mockFiles = [
       new File(['single'], 'doc.pdf', { type: 'application/pdf' }),
     ];
 
     const { result } = renderHook(() =>
       useToolProcessor({
-        tool: jpgTool, // Unavailable in production
+        tool: unavailableTool, // Unavailable in production
         files: mockFiles,
       })
     );
@@ -479,6 +500,164 @@ describe('useToolProcessor Hook', () => {
     // Stale result is completely discarded
     expect(result.current.status).toBe('ready');
     expect(result.current.result).toBeNull();
+  });
+
+  it('cancels pending execution and resets status when page order options change during in-flight processing (PDF-05 Regression Coverage)', async () => {
+    let resolveProcessing;
+    const delayedPromise = new Promise((resolve) => {
+      resolveProcessing = resolve;
+    });
+
+    const mockAdapter = {
+      id: 'reorder-pages',
+      isAvailable: true,
+      execute: () => delayedPromise,
+    };
+
+    const files = [new File(['doc'], 'doc.pdf', { type: 'application/pdf' })];
+
+    const { result, rerender } = renderHook(
+      ({ options }) =>
+        useToolProcessor({
+          tool: reorderTool,
+          files,
+          options,
+          processorAdapter: mockAdapter,
+        }),
+      { initialProps: { options: { pageOrder: [2, 1, 0] } } }
+    );
+
+    // Start processing
+    act(() => {
+      result.current.executeProcessing();
+    });
+    expect(result.current.status).toBe('processing');
+
+    // Page order changed while in flight
+    rerender({ options: { pageOrder: [0, 2, 1] } });
+
+    // Status immediately resets to ready
+    expect(result.current.status).toBe('ready');
+
+    // Late resolution of delayed execution
+    await act(async () => {
+      resolveProcessing({
+        blob: new Blob(['delayed reordered'], { type: 'application/pdf' }),
+        suggestedFilename: 'reordered.pdf',
+      });
+    });
+
+    // Stale result discarded
+    expect(result.current.status).toBe('ready');
+    expect(result.current.result).toBeNull();
+  });
+
+  it('cancels pending execution and resets status when jpg options change during in-flight processing (PDF-06 Coverage)', async () => {
+    let resolveProcessing;
+    const delayedPromise = new Promise((resolve) => {
+      resolveProcessing = resolve;
+    });
+
+    const mockAdapter = {
+      id: 'jpg-to-pdf',
+      isAvailable: true,
+      execute: () => delayedPromise,
+    };
+
+    const files = [new File(['img'], 'img.jpg', { type: 'image/jpeg' })];
+
+    const { result, rerender } = renderHook(
+      ({ options }) =>
+        useToolProcessor({
+          tool: jpgTool,
+          files,
+          options,
+          processorAdapter: mockAdapter,
+        }),
+      { initialProps: { options: { pageSize: 'original', margin: 'none' } } }
+    );
+
+    // Start processing
+    act(() => {
+      result.current.executeProcessing();
+    });
+    expect(result.current.status).toBe('processing');
+
+    // Options changed to A4 Landscape while in flight
+    rerender({ options: { pageSize: 'a4-landscape', margin: 'standard' } });
+
+    // Status immediately resets to ready
+    expect(result.current.status).toBe('ready');
+
+    // Late resolution
+    await act(async () => {
+      resolveProcessing({
+        blob: new Blob(['delayed images'], { type: 'application/pdf' }),
+        suggestedFilename: 'images.pdf',
+      });
+    });
+
+    expect(result.current.status).toBe('ready');
+    expect(result.current.result).toBeNull();
+  });
+
+  it('cancels pending execution and resets status when images are reordered or removed during in-flight processing (PDF-06 Coverage)', async () => {
+    let resolveProcessing;
+    const delayedPromise = new Promise((resolve) => {
+      resolveProcessing = resolve;
+    });
+
+    const mockAdapter = {
+      id: 'jpg-to-pdf',
+      isAvailable: true,
+      execute: () => delayedPromise,
+    };
+
+    const f1 = new File(['img1'], 'a.jpg', { type: 'image/jpeg' });
+    const f2 = new File(['img2'], 'b.jpg', { type: 'image/jpeg' });
+
+    const { result, rerender } = renderHook(
+      ({ files }) =>
+        useToolProcessor({
+          tool: jpgTool,
+          files,
+          processorAdapter: mockAdapter,
+        }),
+      { initialProps: { files: [f1, f2] } }
+    );
+
+    // Start processing
+    act(() => {
+      result.current.executeProcessing();
+    });
+    expect(result.current.status).toBe('processing');
+
+    // Reorder files while processing
+    rerender({ files: [f2, f1] });
+
+    // In-flight processing immediately aborted and status resets to ready
+    expect(result.current.status).toBe('ready');
+
+    // Late resolution
+    await act(async () => {
+      resolveProcessing({
+        blob: new Blob(['delayed images'], { type: 'application/pdf' }),
+        suggestedFilename: 'images.pdf',
+      });
+    });
+
+    expect(result.current.status).toBe('ready');
+    expect(result.current.result).toBeNull();
+
+    // Start processing again
+    act(() => {
+      result.current.executeProcessing();
+    });
+    expect(result.current.status).toBe('processing');
+
+    // Remove one file while in flight
+    rerender({ files: [f2] });
+    expect(result.current.status).toBe('ready');
   });
 
   it('prevents programmatic execution when isOptionsValid is false', async () => {

@@ -273,8 +273,20 @@ describe('ToolWorkspace Component', () => {
     expect(screen.getByText('dragged.pdf')).toBeInTheDocument();
   });
 
-  it('keeps processing action button disabled and displays placeholder engine explanation', () => {
-    renderWorkspace('/tools/jpg-to-pdf');
+  it('keeps processing action button disabled and displays placeholder engine explanation when processor is unavailable', () => {
+    const unavailableAdapter = {
+      id: 'jpg-to-pdf',
+      isAvailable: false,
+      status: 'unavailable',
+      execute: null,
+    };
+    render(
+      <ThemeProvider>
+        <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <ToolWorkspace slugOverride="jpg-to-pdf" processorAdapterOverride={unavailableAdapter} />
+        </MemoryRouter>
+      </ThemeProvider>
+    );
 
     const actionButton = screen.getByRole('button', { name: /Convert to PDF/i });
     expect(actionButton).toBeDisabled();
@@ -375,15 +387,28 @@ describe('ToolWorkspace Component', () => {
     });
 
     it('keeps action button disabled and shows placeholder for unavailable tools even with valid input', async () => {
-      const { user } = renderWorkspace('/tools/jpg-to-pdf');
+      const user = userEvent.setup();
+      const unavailableAdapter = {
+        id: 'jpg-to-pdf',
+        isAvailable: false,
+        status: 'unavailable',
+        execute: null,
+      };
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="jpg-to-pdf" processorAdapterOverride={unavailableAdapter} />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
 
       // Upload valid file to single-file tool (input satisfied)
       const file = new File(['content'], 'sample.jpg', { type: 'image/jpeg', lastModified: 1710000000205 });
       await user.upload(screen.getByLabelText(/Select files for JPG to PDF/i), file);
 
-      // Input requirements satisfied, but jpg-to-pdf processor is unavailable in prod
+      // Input requirements satisfied, but processor is unavailable
       expect(
-        screen.getByText(/1 file loaded .* Ready for client-side processing\./i)
+        screen.getByText(/Ready for client-side processing\./i)
       ).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /Convert to PDF/i })).toBeDisabled();
       expect(screen.getByText(/Processing Engine Placeholder/i)).toBeInTheDocument();
@@ -1165,6 +1190,287 @@ describe('ToolWorkspace Component', () => {
       await user.type(pageInput, '1, 1, 2');
       expect(screen.getByText(/Duplicate page 1 detected/i)).toBeInTheDocument();
       expect(reorderButton).toBeDisabled();
+    });
+
+    it('cancels in-flight reordering and prevents stale completion when page order changes during active processing', async () => {
+      const user = userEvent.setup();
+      let resolveMock;
+      const delayedPromise = new Promise((resolve) => {
+        resolveMock = resolve;
+      });
+
+      const mockAdapter = {
+        id: 'reorder-pages',
+        isAvailable: true,
+        execute: vi.fn().mockImplementation(() => delayedPromise),
+      };
+
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="reorder-pages" processorAdapterOverride={mockAdapter} />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const doc = await PDFDocument.create();
+      for (let i = 0; i < 3; i++) doc.addPage([100, 100]);
+      const file = new File([await doc.save()], 'three-pages.pdf', { type: 'application/pdf', lastModified: 1710000000505 });
+
+      await user.upload(screen.getByLabelText(/Select file for Reorder Pages/i), file);
+      await waitFor(() => {
+        expect(screen.getByText(/3 Pages Total/i)).toBeInTheDocument();
+      });
+
+      const pageInput = screen.getByLabelText(/New Page Sequence/i);
+      const reorderButton = screen.getByRole('button', { name: /Reorder Pages/i });
+
+      // Enter valid sequence
+      await user.type(pageInput, '3, 2, 1');
+      expect(reorderButton).not.toBeDisabled();
+
+      // Trigger processing -> enters processing state and disables inputs
+      await user.click(reorderButton);
+      expect(screen.getByText(/Processing document in your local browser sandbox/i)).toBeInTheDocument();
+      expect(pageInput).toBeDisabled();
+
+      // Resolve the execution promise
+      const reorderedBlob = new Blob(['%PDF-1.4 reordered result'], { type: 'application/pdf' });
+      await act(async () => {
+        resolveMock({
+          blob: reorderedBlob,
+          suggestedFilename: 'reordered.pdf',
+          mimeType: 'application/pdf',
+        });
+      });
+
+      // Confirm download card appears and input is re-enabled
+      expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Download reordered\.pdf/i })).toBeInTheDocument();
+      expect(pageInput).not.toBeDisabled();
+
+      // Modifying page sequence invalidates download card immediately
+      await user.clear(pageInput);
+      await user.type(pageInput, '2, 1, 3');
+      expect(screen.queryByRole('heading', { level: 2, name: /Ready for Download/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('PDF-06 JPG to PDF Workspace Integration', () => {
+    const BASE64_1X1_JPEG =
+      '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxD/2Q==';
+
+    function createTestJpeg(name = 'sample.jpg', options = {}) {
+      const binaryStr = atob(BASE64_1X1_JPEG);
+      const bytes = new Uint8Array(binaryStr.length);
+      for (let i = 0; i < binaryStr.length; i++) {
+        bytes[i] = binaryStr.charCodeAt(i);
+      }
+      return new File([bytes], name, { type: 'image/jpeg', ...options });
+    }
+
+    it('renders sequence badges, move up/down controls, and boundary states for multiple images', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="jpg-to-pdf" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const f1 = createTestJpeg('img1.jpg', { lastModified: 1710000000601 });
+      const f2 = createTestJpeg('img2.jpg', { lastModified: 1710000000602 });
+      const f3 = createTestJpeg('img3.jpg', { lastModified: 1710000000603 });
+
+      const fileInput = screen.getByLabelText(/Select files for JPG to PDF/i);
+      await user.upload(fileInput, [f1, f2, f3]);
+
+      // Verify sequence badges
+      expect(screen.getByText('#1')).toBeInTheDocument();
+      expect(screen.getByText('#2')).toBeInTheDocument();
+      expect(screen.getByText('#3')).toBeInTheDocument();
+
+      // First image: Move Up disabled, Move Down enabled
+      const moveUp1 = screen.getByRole('button', { name: /Move img1\.jpg up/i });
+      const moveDown1 = screen.getByRole('button', { name: /Move img1\.jpg down/i });
+      expect(moveUp1).toBeDisabled();
+      expect(moveDown1).not.toBeDisabled();
+
+      // Third image: Move Up enabled, Move Down disabled
+      const moveUp3 = screen.getByRole('button', { name: /Move img3\.jpg up/i });
+      const moveDown3 = screen.getByRole('button', { name: /Move img3\.jpg down/i });
+      expect(moveUp3).not.toBeDisabled();
+      expect(moveDown3).toBeDisabled();
+
+      // Move img1.jpg down -> img2 is now #1, img1 is #2
+      await user.click(moveDown1);
+      const cards = screen.getAllByText(/img\d\.jpg/i);
+      expect(cards[0].textContent).toBe('img2.jpg');
+      expect(cards[1].textContent).toBe('img1.jpg');
+    });
+
+    it('renders configuration card with page size and margin controls', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="jpg-to-pdf" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const f = createTestJpeg('single.jpg', { lastModified: 1710000000610 });
+      await user.upload(screen.getByLabelText(/Select files for JPG to PDF/i), f);
+
+      // Verify layout configuration card
+      expect(screen.getByRole('heading', { level: 3, name: /Configure PDF Pages/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Original Size/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /A4 Portrait/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /A4 Landscape/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /A4 Auto/i })).toBeInTheDocument();
+
+      // Default A4 portrait shows margins
+      expect(screen.getByRole('button', { name: /Standard Margins/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Borderless/i })).toBeInTheDocument();
+
+      // Click Original Size -> hides margins
+      await user.click(screen.getByRole('button', { name: /Original Size/i }));
+      expect(screen.queryByRole('button', { name: /Standard Margins/i })).not.toBeInTheDocument();
+
+      // Click A4 Landscape -> restores margins
+      await user.click(screen.getByRole('button', { name: /A4 Landscape/i }));
+      expect(screen.getByRole('button', { name: /Standard Margins/i })).toBeInTheDocument();
+    });
+
+    it('executes real production jpg-to-pdf processor and produces download result', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="jpg-to-pdf" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const f1 = createTestJpeg('photo1.jpg', { lastModified: 1710000000620 });
+      const f2 = createTestJpeg('photo2.jpg', { lastModified: 1710000000621 });
+      await user.upload(screen.getByLabelText(/Select files for JPG to PDF/i), [f1, f2]);
+
+      const convertButton = screen.getByRole('button', { name: /Convert to PDF/i });
+      expect(convertButton).not.toBeDisabled();
+
+      // Trigger conversion
+      await user.click(convertButton);
+
+      // Download banner should appear
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
+      });
+      expect(screen.getByRole('button', { name: /Download images\.pdf/i })).toBeInTheDocument();
+
+      // Reordering images invalidates the download output immediately
+      await user.click(screen.getByRole('button', { name: /Move photo1\.jpg down/i }));
+      expect(screen.queryByRole('heading', { level: 2, name: /Ready for Download/i })).not.toBeInTheDocument();
+    });
+
+    it('disables workspace controls during conversion and invalidates completed results when images are reordered', async () => {
+      const user = userEvent.setup();
+      let resolveMock;
+      const delayedPromise = new Promise((resolve) => {
+        resolveMock = resolve;
+      });
+
+      const mockAdapter = {
+        id: 'jpg-to-pdf',
+        isAvailable: true,
+        execute: vi.fn().mockImplementation(() => delayedPromise),
+      };
+
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="jpg-to-pdf" processorAdapterOverride={mockAdapter} />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const f1 = createTestJpeg('imgA.jpg', { lastModified: 1710000000630 });
+      const f2 = createTestJpeg('imgB.jpg', { lastModified: 1710000000631 });
+      await user.upload(screen.getByLabelText(/Select files for JPG to PDF/i), [f1, f2]);
+
+      const convertBtn = screen.getByRole('button', { name: /Convert to PDF/i });
+      await user.click(convertBtn);
+
+      expect(screen.getByText(/Processing document in your local browser sandbox/i)).toBeInTheDocument();
+
+      // Controls are disabled during active conversion
+      expect(screen.getByRole('button', { name: /Move imgA\.jpg down/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Remove imgA\.jpg/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Clear All/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Select Files/i })).toBeDisabled();
+
+      // Resolve the execution promise
+      await act(async () => {
+        resolveMock({
+          blob: new Blob(['images output'], { type: 'application/pdf' }),
+          suggestedFilename: 'images.pdf',
+          mimeType: 'application/pdf',
+        });
+      });
+
+      expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Download images\.pdf/i })).toBeInTheDocument();
+
+      // Reordering after completion immediately invalidates download result
+      await user.click(screen.getByRole('button', { name: /Move imgA\.jpg down/i }));
+      expect(screen.queryByRole('heading', { level: 2, name: /Ready for Download/i })).not.toBeInTheDocument();
+    });
+
+    it('invalidates completed results when an image is removed or layout options change', async () => {
+      const user = userEvent.setup();
+      let resolveMock;
+      const delayedPromise = new Promise((resolve) => {
+        resolveMock = resolve;
+      });
+
+      const mockAdapter = {
+        id: 'jpg-to-pdf',
+        isAvailable: true,
+        execute: vi.fn().mockImplementation(() => delayedPromise),
+      };
+
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="jpg-to-pdf" processorAdapterOverride={mockAdapter} />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const f1 = createTestJpeg('keep.jpg', { lastModified: 1710000000640 });
+      const f2 = createTestJpeg('remove.jpg', { lastModified: 1710000000641 });
+      await user.upload(screen.getByLabelText(/Select files for JPG to PDF/i), [f1, f2]);
+
+      const convertBtn = screen.getByRole('button', { name: /Convert to PDF/i });
+      await user.click(convertBtn);
+
+      expect(screen.getByText(/Processing document in your local browser sandbox/i)).toBeInTheDocument();
+
+      // Resolve promise
+      await act(async () => {
+        resolveMock({
+          blob: new Blob(['images output'], { type: 'application/pdf' }),
+          suggestedFilename: 'images.pdf',
+          mimeType: 'application/pdf',
+        });
+      });
+
+      expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
+
+      // Removing an image invalidates download card immediately
+      await user.click(screen.getByRole('button', { name: /Remove remove\.jpg/i }));
+      expect(screen.queryByRole('heading', { level: 2, name: /Ready for Download/i })).not.toBeInTheDocument();
     });
   });
 
