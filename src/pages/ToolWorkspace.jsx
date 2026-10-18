@@ -102,7 +102,8 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
 
   const isSplitTool = tool.id === 'split-pdf';
   const isRotateTool = tool.id === 'rotate-pdf';
-  const needsPageInspection = isSplitTool || isRotateTool;
+  const isDeleteTool = tool.id === 'delete-pages';
+  const needsPageInspection = isSplitTool || isRotateTool || isDeleteTool;
 
   // Prevent browser default navigation when files are accidentally dropped outside the dropzone
   useEffect(() => {
@@ -127,7 +128,7 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
     };
   }, []);
 
-  // Inspect page count asynchronously for single-file PDF tools (Split, Rotate) without eager bundle bloat
+  // Inspect page count asynchronously for single-file PDF tools (Split, Rotate, Delete) without eager bundle bloat
   useEffect(() => {
     if (!needsPageInspection) return;
 
@@ -177,13 +178,43 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
     };
   }, [needsPageInspection, selectedFiles]);
 
-  // Validate human-entered page selection against inspected page count
+  // Validate human-entered page selection against inspected page count for Split and Rotate
   const rangeResult = useMemo(() => {
     if ((!isSplitTool && (!isRotateTool || rotationScope !== 'selected')) || sourcePageCount === null) {
       return null;
     }
     return parsePageRange(pageSelection, sourcePageCount);
   }, [isSplitTool, isRotateTool, rotationScope, pageSelection, sourcePageCount]);
+
+  // Validate human-entered page selection for Delete Pages (ensuring not all pages are deleted)
+  const deleteResult = useMemo(() => {
+    if (!isDeleteTool || sourcePageCount === null) {
+      return null;
+    }
+    const parse = parsePageRange(pageSelection, sourcePageCount);
+    if (!parse.valid) {
+      return {
+        valid: false,
+        error: parse.error,
+      };
+    }
+    const deleteCount = parse.pageIndices.length;
+    if (deleteCount >= sourcePageCount) {
+      return {
+        valid: false,
+        error: 'Cannot delete all pages from the document. At least one page must remain.',
+      };
+    }
+    const retainCount = sourcePageCount - deleteCount;
+    const deletedList = parse.pageIndices.map((i) => i + 1).join(', ');
+    return {
+      valid: true,
+      deleteCount,
+      retainCount,
+      deletedList,
+      pageIndices: parse.pageIndices,
+    };
+  }, [isDeleteTool, pageSelection, sourcePageCount]);
 
   const isOptionsValid = useMemo(() => {
     if (isSplitTool) {
@@ -195,13 +226,16 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
       if (rotationScope === 'all') return true;
       return Boolean(rangeResult?.valid);
     }
+    if (isDeleteTool) {
+      return Boolean(sourcePageCount !== null && deleteResult?.valid);
+    }
     return true;
-  }, [isSplitTool, isRotateTool, sourcePageCount, rangeResult, rotationAngle, rotationScope]);
+  }, [isSplitTool, isRotateTool, isDeleteTool, sourcePageCount, rangeResult, rotationAngle, rotationScope, deleteResult]);
 
-  // When scope is All pages, exclude the inactive page-selection value from effective processing options
+  // When scope is All pages for Rotate, exclude the inactive page-selection value from effective processing options
   // so that hidden input changes do not unnecessarily invalidate results.
   const processorOptions = useMemo(() => {
-    if (isSplitTool) {
+    if (isSplitTool || isDeleteTool) {
       return { pageSelection };
     }
     if (isRotateTool) {
@@ -212,7 +246,7 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
       };
     }
     return undefined;
-  }, [isSplitTool, isRotateTool, pageSelection, rotationAngle, rotationScope]);
+  }, [isSplitTool, isRotateTool, isDeleteTool, pageSelection, rotationAngle, rotationScope]);
 
   // Hook managing processing lifecycle (idle, ready, processing, success, error)
   const {
@@ -899,6 +933,62 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
         </div>
       )}
 
+      {/* Delete PDF Pages Configuration */}
+      {isDeleteTool && selectedFiles.length === 1 && (
+        <div className="glass-panel p-5 sm:p-6 mt-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+            <div>
+              <h3 className="font-heading text-sm sm:text-base font-bold text-primary">
+                Select Pages to Delete
+              </h3>
+              <p className="text-xs text-secondary mt-0.5">
+                Specify page numbers or ranges to remove from the document.
+              </p>
+            </div>
+            {isInspecting ? (
+              <span className="glass-pill px-3 py-1 text-xs text-accent flex items-center gap-1.5 self-start sm:self-auto">
+                <span className="h-3 w-3 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+                Inspecting pages...
+              </span>
+            ) : sourcePageCount !== null ? (
+              <GlassBadge variant="accent" size="md" className="self-start sm:self-auto">
+                {sourcePageCount} {sourcePageCount === 1 ? 'Page' : 'Pages'} Total
+              </GlassBadge>
+            ) : null}
+          </div>
+
+          {inspectionError ? (
+            <div className="p-3.5 rounded-xl border border-status-danger/30 bg-status-danger/10 text-status-danger text-xs sm:text-sm flex items-start gap-2.5">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" aria-hidden="true" />
+              <span>{inspectionError}</span>
+            </div>
+          ) : (
+            <GlassInput
+              id="delete-page-selection"
+              label="Pages to Delete"
+              placeholder="e.g. 1-3, 5, 8-10"
+              value={pageSelection}
+              disabled={isProcessing || isInspecting || sourcePageCount === null}
+              onChange={(e) => setPageSelection(e.target.value)}
+              helperText={
+                deleteResult?.valid
+                  ? `Deleting ${deleteResult.deleteCount} ${
+                      deleteResult.deleteCount === 1 ? 'page' : 'pages'
+                    } (${deleteResult.deletedList}). Retaining ${deleteResult.retainCount} ${
+                      deleteResult.retainCount === 1 ? 'page' : 'pages'
+                    }.`
+                  : 'Enter page numbers and/or ranges to remove (e.g. 1-3, 5, 8-10).'
+              }
+              error={
+                pageSelection.trim().length > 0 && !deleteResult?.valid
+                  ? deleteResult?.error
+                  : undefined
+              }
+            />
+          )}
+        </div>
+      )}
+
       {/* Action Dock / Processing Section */}
       <div className="glass-panel p-6 sm:p-8 mt-8 border-t border-border-subtle">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -939,6 +1029,20 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
                   : rotationScope === 'all'
                   ? `Rotating all ${sourcePageCount || ''} pages by ${rotationAngle}° clockwise. Ready for client-side processing.`
                   : `Rotating ${rangeResult?.pageIndices?.length || 0} selected pages by ${rotationAngle}° clockwise. Ready for client-side processing.`
+                : isDeleteTool
+                ? isInspecting
+                  ? 'Inspecting document pages in local sandbox...'
+                  : inspectionError
+                  ? 'Cannot process: source document has inspection errors.'
+                  : !pageSelection.trim()
+                  ? 'Enter the pages you want to delete above.'
+                  : !deleteResult?.valid
+                  ? 'Please correct the page selection above.'
+                  : `Deleting ${deleteResult.deleteCount} ${
+                      deleteResult.deleteCount === 1 ? 'page' : 'pages'
+                    }. Retaining ${deleteResult.retainCount} ${
+                      deleteResult.retainCount === 1 ? 'page' : 'pages'
+                    }. Ready for client-side processing.`
                 : `${selectedFiles.length} ${
                     selectedFiles.length === 1 ? 'file' : 'files'
                   } loaded (${formatFileSize(totalSize)}). Ready for client-side processing.`}

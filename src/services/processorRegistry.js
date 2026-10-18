@@ -42,10 +42,13 @@ export const PROCESSOR_REGISTRY = Object.freeze({
   'delete-pages': Object.freeze({
     id: 'delete-pages',
     name: 'Delete Pages',
-    isAvailable: false,
-    status: 'unavailable',
-    reason: 'Processing engine scheduled for implementation in upcoming ticket.',
-    execute: null,
+    isAvailable: true,
+    status: 'available',
+    reason: 'Pure client-side in-memory PDF page deletion engine.',
+    execute: async (params) => {
+      const { deletePdf } = await import('../processors/deletePdf.js');
+      return deletePdf(params);
+    },
   }),
   'reorder-pages': Object.freeze({
     id: 'reorder-pages',

@@ -274,9 +274,9 @@ describe('ToolWorkspace Component', () => {
   });
 
   it('keeps processing action button disabled and displays placeholder engine explanation', () => {
-    renderWorkspace('/tools/delete-pages');
+    renderWorkspace('/tools/reorder-pages');
 
-    const actionButton = screen.getByRole('button', { name: /Delete Pages/i });
+    const actionButton = screen.getByRole('button', { name: /Reorder Pages/i });
     expect(actionButton).toBeDisabled();
 
     expect(
@@ -375,17 +375,17 @@ describe('ToolWorkspace Component', () => {
     });
 
     it('keeps action button disabled and shows placeholder for unavailable tools even with valid input', async () => {
-      const { user } = renderWorkspace('/tools/delete-pages');
+      const { user } = renderWorkspace('/tools/reorder-pages');
 
       // Upload valid file to single-file tool (input satisfied)
       const file = new File(['content'], 'sample.pdf', { type: 'application/pdf', lastModified: 1710000000205 });
-      await user.upload(screen.getByLabelText(/Select file for Delete Pages/i), file);
+      await user.upload(screen.getByLabelText(/Select file for Reorder Pages/i), file);
 
-      // Input requirements satisfied, but delete-pages processor is unavailable in prod
+      // Input requirements satisfied, but reorder-pages processor is unavailable in prod
       expect(
         screen.getByText(/1 file loaded .* Ready for client-side processing\./i)
       ).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Delete Pages/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Reorder Pages/i })).toBeDisabled();
       expect(screen.getByText(/Processing Engine Placeholder/i)).toBeInTheDocument();
     });
 
@@ -605,7 +605,7 @@ describe('ToolWorkspace Component', () => {
       });
 
       const mockAdapter = {
-        id: 'delete-pages',
+        id: 'reorder-pages',
         isAvailable: true,
         execute: vi.fn().mockImplementation(() => delayedPromise),
       };
@@ -613,17 +613,17 @@ describe('ToolWorkspace Component', () => {
       render(
         <ThemeProvider>
           <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <ToolWorkspace slugOverride="delete-pages" processorAdapterOverride={mockAdapter} />
+            <ToolWorkspace slugOverride="reorder-pages" processorAdapterOverride={mockAdapter} />
           </MemoryRouter>
         </ThemeProvider>
       );
 
       const file = new File(['source'], 'original.pdf', { type: 'application/pdf', lastModified: 1710000000210 });
-      const fileInput = screen.getByLabelText(/Select file for Delete Pages/i);
+      const fileInput = screen.getByLabelText(/Select file for Reorder Pages/i);
       await user.upload(fileInput, file);
 
       // Action button should now be enabled because processor is available and input is ready
-      const processButton = screen.getByRole('button', { name: /Delete Pages/i });
+      const processButton = screen.getByRole('button', { name: /Reorder Pages/i });
       expect(processButton).not.toBeDisabled();
 
       // Click to start processing
@@ -640,15 +640,15 @@ describe('ToolWorkspace Component', () => {
       await act(async () => {
         resolveMock({
           blob: outputBlob,
-          suggestedFilename: 'deleted.pdf',
+          suggestedFilename: 'reordered.pdf',
           mimeType: 'application/pdf',
         });
       });
 
       // Successful completion: Download banner appears
       expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
-      expect(screen.getAllByText(/deleted\.pdf/i).length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByRole('button', { name: /Download deleted\.pdf/i })).toBeInTheDocument();
+      expect(screen.getAllByText(/reordered\.pdf/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByRole('button', { name: /Download reordered\.pdf/i })).toBeInTheDocument();
 
       // Clear all resets state and removes download card
       await user.click(screen.getByRole('button', { name: /Clear All/i }));
@@ -658,7 +658,7 @@ describe('ToolWorkspace Component', () => {
     it('displays accessible error banner on processor failure and allows dismissal', async () => {
       const user = userEvent.setup();
       const mockAdapter = {
-        id: 'delete-pages',
+        id: 'reorder-pages',
         isAvailable: true,
         execute: vi.fn().mockRejectedValue(new Error('Corrupt PDF trailer syntax.')),
       };
@@ -666,15 +666,15 @@ describe('ToolWorkspace Component', () => {
       render(
         <ThemeProvider>
           <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-            <ToolWorkspace slugOverride="delete-pages" processorAdapterOverride={mockAdapter} />
+            <ToolWorkspace slugOverride="reorder-pages" processorAdapterOverride={mockAdapter} />
           </MemoryRouter>
         </ThemeProvider>
       );
 
       const file = new File(['bad'], 'corrupt.pdf', { type: 'application/pdf', lastModified: 1710000000220 });
-      await user.upload(screen.getByLabelText(/Select file for Delete Pages/i), file);
+      await user.upload(screen.getByLabelText(/Select file for Reorder Pages/i), file);
 
-      const actionButton = screen.getByRole('button', { name: /Delete Pages/i });
+      const actionButton = screen.getByRole('button', { name: /Reorder Pages/i });
       expect(actionButton).not.toBeDisabled();
 
       await user.click(actionButton);
@@ -844,6 +844,145 @@ describe('ToolWorkspace Component', () => {
       // Changing angle invalidates output
       await user.click(screen.getByRole('button', { name: /Rotate 180° Flip/i }));
       expect(screen.queryByRole('heading', { level: 2, name: /Ready for Download/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('PDF-04 Delete Pages Workspace Integration', () => {
+    it('inspects page count and renders delete pages configuration card with badge', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="delete-pages" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const doc = await PDFDocument.create();
+      for (let i = 0; i < 4; i++) doc.addPage([100, 100]);
+      const file = new File([await doc.save()], 'four-pages.pdf', { type: 'application/pdf', lastModified: 1710000000400 });
+
+      await user.upload(screen.getByLabelText(/Select file for Delete Pages/i), file);
+
+      // Verify page count badge
+      await waitFor(() => {
+        expect(screen.getByText(/4 Pages Total/i)).toBeInTheDocument();
+      });
+
+      expect(screen.getByRole('heading', { level: 3, name: /Select Pages to Delete/i })).toBeInTheDocument();
+      expect(screen.getByLabelText(/Pages to Delete/i)).toBeInTheDocument();
+
+      // Action button should be disabled because page selection is empty
+      const deleteButton = screen.getByRole('button', { name: /Delete Pages/i });
+      expect(deleteButton).toBeDisabled();
+    });
+
+    it('updates deletion and retention counts in helper text and executes real deletion', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="delete-pages" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const doc = await PDFDocument.create();
+      for (let i = 0; i < 4; i++) doc.addPage([100, 100]);
+      const file = new File([await doc.save()], 'sample.pdf', { type: 'application/pdf', lastModified: 1710000000401 });
+
+      await user.upload(screen.getByLabelText(/Select file for Delete Pages/i), file);
+      await waitFor(() => {
+        expect(screen.getByText(/4 Pages Total/i)).toBeInTheDocument();
+      });
+
+      const pageInput = screen.getByLabelText(/Pages to Delete/i);
+      const deleteButton = screen.getByRole('button', { name: /Delete Pages/i });
+
+      // Enter pages 2 and 4
+      await user.type(pageInput, '2, 4');
+
+      // Helper text updates with deletion and retention numbers
+      expect(screen.getByText(/Deleting 2 pages \(2, 4\)\. Retaining 2 pages\./i)).toBeInTheDocument();
+      expect(deleteButton).not.toBeDisabled();
+
+      // Trigger deletion
+      await user.click(deleteButton);
+
+      // Result card should appear with pages-removed.pdf
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
+      });
+      expect(screen.getByRole('button', { name: /Download pages-removed\.pdf/i })).toBeInTheDocument();
+
+      // Modifying page selection invalidates the download result immediately
+      await user.type(pageInput, ', 1');
+      expect(screen.queryByRole('heading', { level: 2, name: /Ready for Download/i })).not.toBeInTheDocument();
+    });
+
+    it('strictly guards against deleting all pages in the document', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="delete-pages" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const doc = await PDFDocument.create();
+      for (let i = 0; i < 3; i++) doc.addPage([100, 100]);
+      const file = new File([await doc.save()], 'three-pages.pdf', { type: 'application/pdf', lastModified: 1710000000402 });
+
+      await user.upload(screen.getByLabelText(/Select file for Delete Pages/i), file);
+      await waitFor(() => {
+        expect(screen.getByText(/3 Pages Total/i)).toBeInTheDocument();
+      });
+
+      const pageInput = screen.getByLabelText(/Pages to Delete/i);
+      const deleteButton = screen.getByRole('button', { name: /Delete Pages/i });
+
+      // Enter all 3 pages
+      await user.type(pageInput, '1-3');
+
+      // Error message displayed and action button disabled
+      expect(screen.getByText(/Cannot delete all pages from the document\. At least one page must remain\./i)).toBeInTheDocument();
+      expect(deleteButton).toBeDisabled();
+    });
+
+    it('invalidates in-flight processing when input is modified', async () => {
+      const user = userEvent.setup();
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="delete-pages" />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const doc = await PDFDocument.create();
+      for (let i = 0; i < 3; i++) doc.addPage([100, 100]);
+      const file = new File([await doc.save()], 'in-flight.pdf', { type: 'application/pdf', lastModified: 1710000000403 });
+
+      await user.upload(screen.getByLabelText(/Select file for Delete Pages/i), file);
+      await waitFor(() => {
+        expect(screen.getByText(/3 Pages Total/i)).toBeInTheDocument();
+      });
+
+      const pageInput = screen.getByLabelText(/Pages to Delete/i);
+      await user.type(pageInput, '1');
+
+      const deleteButton = screen.getByRole('button', { name: /Delete Pages/i });
+      await user.click(deleteButton);
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
+      });
+
+      // Clear all resets state completely
+      await user.click(screen.getByRole('button', { name: /Clear All/i }));
+      expect(screen.queryByRole('heading', { level: 2, name: /Ready for Download/i })).not.toBeInTheDocument();
+      expect(screen.queryByText(/Pages Total/i)).not.toBeInTheDocument();
     });
   });
 

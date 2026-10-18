@@ -14,7 +14,7 @@ describe('processorRegistry', () => {
     });
   });
 
-  it('marks merge-pdf, split-pdf, and rotate-pdf as available and the remaining three MVP tools as unavailable in production', () => {
+  it('marks merge-pdf, split-pdf, rotate-pdf, and delete-pages as available and the remaining two MVP tools as unavailable in production', () => {
     // 1. Merge PDF is active and functional
     const mergeProc = getToolProcessor('merge-pdf');
     expect(mergeProc).toBeDefined();
@@ -42,8 +42,17 @@ describe('processorRegistry', () => {
     expect(typeof rotateProc.execute).toBe('function');
     expect(isProcessorAvailable('rotate-pdf')).toBe(true);
 
-    // 4. The remaining three tools remain unavailable placeholders
-    const unavailableSlugs = ['delete-pages', 'reorder-pages', 'jpg-to-pdf'];
+    // 4. Delete Pages is active and functional
+    const deleteProc = getToolProcessor('delete-pages');
+    expect(deleteProc).toBeDefined();
+    expect(deleteProc.id).toBe('delete-pages');
+    expect(deleteProc.isAvailable).toBe(true);
+    expect(deleteProc.status).toBe('available');
+    expect(typeof deleteProc.execute).toBe('function');
+    expect(isProcessorAvailable('delete-pages')).toBe(true);
+
+    // 5. The remaining two tools remain unavailable placeholders
+    const unavailableSlugs = ['reorder-pages', 'jpg-to-pdf'];
     unavailableSlugs.forEach((slug) => {
       const proc = getToolProcessor(slug);
       expect(proc).toBeDefined();
@@ -65,24 +74,24 @@ describe('processorRegistry', () => {
   it('supports dependency-injected test adapters without mutating the production registry', () => {
     const mockExecute = async () => ({ blob: new Blob(['mock']), suggestedFilename: 'mock.pdf' });
     const customAdapters = {
-      'delete-pages': {
-        id: 'delete-pages',
+      'reorder-pages': {
+        id: 'reorder-pages',
         isAvailable: true,
         execute: mockExecute,
       },
     };
 
     // With injected adapter
-    const injected = getToolProcessor('delete-pages', customAdapters);
+    const injected = getToolProcessor('reorder-pages', customAdapters);
     expect(injected.isAvailable).toBe(true);
     expect(injected.execute).toBe(mockExecute);
-    expect(isProcessorAvailable('delete-pages', customAdapters)).toBe(true);
+    expect(isProcessorAvailable('reorder-pages', customAdapters)).toBe(true);
 
-    // Production registry remains unaltered (delete-pages is still unavailable in prod)
-    const prod = getToolProcessor('delete-pages');
+    // Production registry remains unaltered (reorder-pages is still unavailable in prod)
+    const prod = getToolProcessor('reorder-pages');
     expect(prod.isAvailable).toBe(false);
     expect(prod.execute).toBeNull();
-    expect(isProcessorAvailable('delete-pages')).toBe(false);
+    expect(isProcessorAvailable('reorder-pages')).toBe(false);
   });
 
   it('lazily loads and executes mergePdf upon execute invocation', async () => {
@@ -111,6 +120,16 @@ describe('processorRegistry', () => {
 
     // Calling execute dynamically imports rotatePdf and enforces its contract
     await expect(rotateProc.execute({ files: [] })).rejects.toThrow(
+      /requires exactly one source document/i
+    );
+  });
+
+  it('lazily loads and executes deletePdf upon execute invocation', async () => {
+    const deleteProc = getToolProcessor('delete-pages');
+    expect(typeof deleteProc.execute).toBe('function');
+
+    // Calling execute dynamically imports deletePdf and enforces its contract
+    await expect(deleteProc.execute({ files: [] })).rejects.toThrow(
       /requires exactly one source document/i
     );
   });
