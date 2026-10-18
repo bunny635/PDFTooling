@@ -8,6 +8,8 @@ import {
   triggerBlobDownload,
 } from '../utils/downloadManager.js';
 
+export const EMPTY_OPTIONS = Object.freeze({});
+
 /**
  * useToolProcessor
  * Reusable lifecycle hook managing tool processing states (idle, ready, processing, success, error),
@@ -19,7 +21,7 @@ import {
  * @param {object} [params.options] - Tool-specific execution options
  * @param {object} [params.processorAdapter] - Optional dependency-injected test adapter
  */
-export function useToolProcessor({ tool, files = [], options = {}, processorAdapter = null }) {
+export function useToolProcessor({ tool, files = [], options = EMPTY_OPTIONS, processorAdapter = null }) {
   const [status, setStatus] = useState('idle');
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -131,8 +133,8 @@ export function useToolProcessor({ tool, files = [], options = {}, processorAdap
 
       // Sanitize output filename
       const safeFilename = sanitizeFilename(output?.suggestedFilename, {
-        expectedExtension: output?.suggestedFilename?.toLowerCase()?.endsWith('.pdf') ? '.pdf' : '.pdf',
-        fallback: `${tool.slug}-result.pdf`,
+        expectedExtension: '.pdf',
+        fallback: `${tool?.slug || 'document'}-result.pdf`,
       });
 
       // Create retained object URL for result state

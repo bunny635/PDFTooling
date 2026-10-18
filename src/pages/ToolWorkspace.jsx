@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -59,6 +59,23 @@ const ACTION_LABELS = {
 };
 
 /**
+ * Detects whether a drag or drop event involves actual filesystem files.
+ * Ensures the global drag trap ignores text selection, link dragging, and internal UI drags.
+ */
+export function isFileDragEvent(e) {
+  if (!e || !e.dataTransfer) return false;
+  const types = e.dataTransfer.types;
+  if (!types) {
+    return Boolean(e.dataTransfer.files && e.dataTransfer.files.length > 0);
+  }
+  const hasFilesType =
+    (typeof types.includes === 'function' && types.includes('Files')) ||
+    Array.from(types).includes('Files');
+  const hasFilesList = Boolean(e.dataTransfer.files && e.dataTransfer.files.length > 0);
+  return Boolean(hasFilesType || hasFilesList);
+}
+
+/**
  * Inner workspace component containing the interactive file management state
  * and processing lifecycle. Isolated per activeSlug using React keying.
  */
@@ -69,6 +86,29 @@ function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
 
   const fileInputRef = useRef(null);
   const dragCounterRef = useRef(0);
+
+  // Prevent browser default navigation when files are accidentally dropped outside the dropzone
+  useEffect(() => {
+    const handleWindowDragOver = (e) => {
+      if (isFileDragEvent(e)) {
+        e.preventDefault();
+      }
+    };
+
+    const handleWindowDrop = (e) => {
+      if (isFileDragEvent(e)) {
+        e.preventDefault();
+      }
+    };
+
+    window.addEventListener('dragover', handleWindowDragOver);
+    window.addEventListener('drop', handleWindowDrop);
+
+    return () => {
+      window.removeEventListener('dragover', handleWindowDragOver);
+      window.removeEventListener('drop', handleWindowDrop);
+    };
+  }, []);
 
   // Hook managing processing lifecycle (idle, ready, processing, success, error)
   const {

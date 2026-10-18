@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider, MemoryRouter } from 'react-router-dom';
 import { routes } from '../app/router.jsx';
 import { ThemeProvider } from '../app/providers/ThemeProvider.jsx';
-import ToolWorkspace from '../pages/ToolWorkspace.jsx';
+import ToolWorkspace, { isFileDragEvent } from '../pages/ToolWorkspace.jsx';
 
 function renderWorkspace(route = '/tools/merge-pdf') {
   const memoryRouter = createMemoryRouter(routes, {
@@ -458,6 +458,99 @@ describe('ToolWorkspace Component', () => {
       // Dismissing error clears the banner
       await user.click(screen.getByRole('button', { name: /Dismiss/i }));
       expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('AUDIT-01-FIX Workspace Drop Safety', () => {
+    describe('isFileDragEvent helper', () => {
+      it('returns true when dataTransfer types contains Files', () => {
+        expect(isFileDragEvent({ dataTransfer: { types: ['Files'] } })).toBe(true);
+        expect(isFileDragEvent({ dataTransfer: { types: ['text/plain', 'Files'] } })).toBe(true);
+      });
+
+      it('returns true when dataTransfer files list is non-empty', () => {
+        const file = new File(['content'], 'doc.pdf', { type: 'application/pdf' });
+        expect(isFileDragEvent({ dataTransfer: { files: [file], types: [] } })).toBe(true);
+      });
+
+      it('returns false for text-only drags, null events, or non-file drags', () => {
+        expect(isFileDragEvent(null)).toBe(false);
+        expect(isFileDragEvent({})).toBe(false);
+        expect(isFileDragEvent({ dataTransfer: null })).toBe(false);
+        expect(isFileDragEvent({ dataTransfer: { types: ['text/plain'] } })).toBe(false);
+        expect(isFileDragEvent({ dataTransfer: { types: ['text/uri-list'] } })).toBe(false);
+      });
+    });
+
+    it('prevents default on window dragover and drop for file drags and ignores non-file drags', () => {
+      const { unmount } = renderWorkspace('/tools/merge-pdf');
+
+      // 1. File dragover on window
+      const fileDragOverEvent = new Event('dragover', { bubbles: true, cancelable: true });
+      Object.defineProperty(fileDragOverEvent, 'dataTransfer', {
+        value: { types: ['Files'] },
+      });
+      window.dispatchEvent(fileDragOverEvent);
+      expect(fileDragOverEvent.defaultPrevented).toBe(true);
+
+      // 2. File drop outside dropzone (e.g. on window)
+      const fileDropEvent = new Event('drop', { bubbles: true, cancelable: true });
+      Object.defineProperty(fileDropEvent, 'dataTransfer', {
+        value: {
+          types: ['Files'],
+          files: [new File(['content'], 'outside.pdf', { type: 'application/pdf' })],
+        },
+      });
+      window.dispatchEvent(fileDropEvent);
+      expect(fileDropEvent.defaultPrevented).toBe(true);
+
+      // Verify file was NOT added to the workspace
+      expect(screen.queryByText('outside.pdf')).not.toBeInTheDocument();
+
+      // 3. Non-file drag (e.g. plain text drag) should NOT be prevented
+      const textDragOverEvent = new Event('dragover', { bubbles: true, cancelable: true });
+      Object.defineProperty(textDragOverEvent, 'dataTransfer', {
+        value: { types: ['text/plain'] },
+      });
+      window.dispatchEvent(textDragOverEvent);
+      expect(textDragOverEvent.defaultPrevented).toBe(false);
+
+      const textDropEvent = new Event('drop', { bubbles: true, cancelable: true });
+      Object.defineProperty(textDropEvent, 'dataTransfer', {
+        value: { types: ['text/plain'] },
+      });
+      window.dispatchEvent(textDropEvent);
+      expect(textDropEvent.defaultPrevented).toBe(false);
+
+      // 4. Clean unmount removes window listeners
+      unmount();
+      const postUnmountDrop = new Event('drop', { bubbles: true, cancelable: true });
+      Object.defineProperty(postUnmountDrop, 'dataTransfer', {
+        value: { types: ['Files'] },
+      });
+      window.dispatchEvent(postUnmountDrop);
+      expect(postUnmountDrop.defaultPrevented).toBe(false);
+    });
+
+    it('preserves inside-dropzone file handling while window trap is active', () => {
+      renderWorkspace('/tools/merge-pdf');
+
+      const dropzone = screen.getByRole('region', { name: /Merge PDF file selection area/i });
+      const insideFile = new File(['valid pdf content'], 'inside-drop.pdf', {
+        type: 'application/pdf',
+        lastModified: 1710000000999,
+      });
+
+      fireEvent.drop(dropzone, {
+        dataTransfer: {
+          files: [insideFile],
+          types: ['Files'],
+        },
+      });
+
+      // Inside drop must be processed and displayed in workspace
+      expect(screen.getByText('inside-drop.pdf')).toBeInTheDocument();
+      expect(screen.getByText('Selected File')).toBeInTheDocument();
     });
   });
 });

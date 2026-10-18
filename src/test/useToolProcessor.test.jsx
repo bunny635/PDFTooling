@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useToolProcessor } from '../hooks/useToolProcessor.js';
+import { useToolProcessor, EMPTY_OPTIONS } from '../hooks/useToolProcessor.js';
 
 describe('useToolProcessor Hook', () => {
   const mergeTool = { id: 'merge-pdf', slug: 'merge-pdf', name: 'Merge PDF', minFiles: 2 };
@@ -310,5 +310,69 @@ describe('useToolProcessor Hook', () => {
     unmount();
     // Verify cleanup was invoked without errors
     expect(result.current.isProcessing).toBe(false);
+  });
+
+  describe('AUDIT-01-FIX Hook Stability & Metadata Resilience', () => {
+    it('freezes EMPTY_OPTIONS and uses it as stable default options argument', () => {
+      expect(Object.isFrozen(EMPTY_OPTIONS)).toBe(true);
+      expect(EMPTY_OPTIONS).toEqual({});
+    });
+
+    it('maintains stable executeProcessing callback reference across rerenders when options are omitted', () => {
+      const mockAdapter = {
+        id: 'split-pdf',
+        isAvailable: true,
+        execute: vi.fn(),
+      };
+      const files = [new File(['doc'], 'doc.pdf', { type: 'application/pdf' })];
+
+      const { result, rerender } = renderHook(
+        () =>
+          useToolProcessor({
+            tool: splitTool,
+            files,
+            processorAdapter: mockAdapter,
+          })
+      );
+
+      const firstCallback = result.current.executeProcessing;
+      rerender();
+      const secondCallback = result.current.executeProcessing;
+
+      // Because EMPTY_OPTIONS is stable, executeProcessing callback reference is preserved across rerenders
+      expect(firstCallback).toBe(secondCallback);
+    });
+
+    it('safely handles missing or incomplete tool metadata during output filename fallback', async () => {
+      const toolWithoutSlug = { id: 'custom-tool', name: 'Custom Tool', minFiles: 1 };
+      const mockBlob = new Blob(['%PDF-1.4 output content'], { type: 'application/pdf' });
+      const mockAdapter = {
+        id: 'custom-tool',
+        isAvailable: true,
+        execute: async () => ({
+          blob: mockBlob,
+          suggestedFilename: '', // Empty suggested filename triggers fallback
+          mimeType: 'application/pdf',
+        }),
+      };
+      const files = [new File(['input'], 'test.pdf', { type: 'application/pdf' })];
+
+      const { result } = renderHook(() =>
+        useToolProcessor({
+          tool: toolWithoutSlug,
+          files,
+          processorAdapter: mockAdapter,
+        })
+      );
+
+      await act(async () => {
+        await result.current.executeProcessing();
+      });
+
+      expect(result.current.status).toBe('success');
+      expect(result.current.result).toBeDefined();
+      // Should fall back to 'document-result.pdf' instead of throwing or producing 'undefined-result.pdf'
+      expect(result.current.result.filename).toBe('document-result.pdf');
+    });
   });
 });
