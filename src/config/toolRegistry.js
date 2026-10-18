@@ -14,6 +14,7 @@ export const TOOLS = [
     iconName: 'Layers',
     acceptedMimeTypes: ['application/pdf'],
     multiple: true,
+    minFiles: 2,
   },
   {
     id: 'split-pdf',
@@ -25,6 +26,7 @@ export const TOOLS = [
     iconName: 'Scissors',
     acceptedMimeTypes: ['application/pdf'],
     multiple: false,
+    minFiles: 1,
   },
   {
     id: 'rotate-pdf',
@@ -36,6 +38,7 @@ export const TOOLS = [
     iconName: 'RotateCw',
     acceptedMimeTypes: ['application/pdf'],
     multiple: false,
+    minFiles: 1,
   },
   {
     id: 'delete-pages',
@@ -47,6 +50,7 @@ export const TOOLS = [
     iconName: 'Trash2',
     acceptedMimeTypes: ['application/pdf'],
     multiple: false,
+    minFiles: 1,
   },
   {
     id: 'reorder-pages',
@@ -58,6 +62,7 @@ export const TOOLS = [
     iconName: 'ArrowUpDown',
     acceptedMimeTypes: ['application/pdf'],
     multiple: false,
+    minFiles: 1,
   },
   {
     id: 'jpg-to-pdf',
@@ -69,6 +74,7 @@ export const TOOLS = [
     iconName: 'Image',
     acceptedMimeTypes: ['image/jpeg', 'image/jpg'],
     multiple: true,
+    minFiles: 1,
   },
 ];
 

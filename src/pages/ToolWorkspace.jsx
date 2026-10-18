@@ -17,6 +17,8 @@ import {
   X,
   Lock,
   Clock,
+  CheckCircle2,
+  Download,
 } from 'lucide-react';
 import { getToolBySlug } from '../config/toolRegistry.js';
 import { GlassCard, GlassBadge, GlassButton } from '../components/glass/index.js';
@@ -25,6 +27,7 @@ import {
   isDuplicateFile,
   formatFileSize,
 } from '../utils/fileValidation.js';
+import { useToolProcessor } from '../hooks/useToolProcessor.js';
 import NotFound from './NotFound.jsx';
 
 // Map iconName strings from toolRegistry.js to Lucide React components
@@ -56,16 +59,34 @@ const ACTION_LABELS = {
 };
 
 /**
- * Inner workspace component containing the interactive file management state.
- * Isolated per activeSlug using React keying to ensure complete state reset across routes.
+ * Inner workspace component containing the interactive file management state
+ * and processing lifecycle. Isolated per activeSlug using React keying.
  */
-function ToolWorkspaceInner({ tool }) {
+function ToolWorkspaceInner({ tool, processorAdapterOverride }) {
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [isDragging, setIsDragging] = useState(false);
 
   const fileInputRef = useRef(null);
   const dragCounterRef = useRef(0);
+
+  // Hook managing processing lifecycle (idle, ready, processing, success, error)
+  const {
+    status,
+    isProcessing,
+    isInputReady,
+    isProcessorAvailable,
+    result,
+    error: processingError,
+    minFiles,
+    executeProcessing,
+    downloadResult,
+    resetProcessing,
+  } = useToolProcessor({
+    tool,
+    files: selectedFiles,
+    processorAdapter: processorAdapterOverride,
+  });
 
   const ToolIcon = TOOL_ICONS[tool.iconName] || FileText;
   const categoryLabel = CATEGORY_LABELS[tool.category] || tool.category;
@@ -77,6 +98,7 @@ function ToolWorkspaceInner({ tool }) {
   const totalSize = selectedFiles.reduce((acc, f) => acc + (f.size || 0), 0);
 
   const handleFilesAdded = (incomingFiles) => {
+    if (isProcessing) return;
     if (!incomingFiles || incomingFiles.length === 0) return;
 
     const newAlerts = [];
@@ -147,6 +169,7 @@ function ToolWorkspaceInner({ tool }) {
   };
 
   const handleInputChange = (e) => {
+    if (isProcessing) return;
     if (e.target.files && e.target.files.length > 0) {
       handleFilesAdded(Array.from(e.target.files));
     }
@@ -156,6 +179,7 @@ function ToolWorkspaceInner({ tool }) {
   const handleDragEnter = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (isProcessing) return;
     dragCounterRef.current += 1;
     if (dragCounterRef.current === 1) {
       setIsDragging(true);
@@ -165,6 +189,7 @@ function ToolWorkspaceInner({ tool }) {
   const handleDragOver = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (isProcessing) return;
     if (e.dataTransfer) {
       e.dataTransfer.dropEffect = 'copy';
     }
@@ -173,6 +198,7 @@ function ToolWorkspaceInner({ tool }) {
   const handleDragLeave = (e) => {
     e.preventDefault();
     e.stopPropagation();
+    if (isProcessing) return;
     dragCounterRef.current = Math.max(0, dragCounterRef.current - 1);
     if (dragCounterRef.current === 0) {
       setIsDragging(false);
@@ -184,6 +210,7 @@ function ToolWorkspaceInner({ tool }) {
     e.stopPropagation();
     dragCounterRef.current = 0;
     setIsDragging(false);
+    if (isProcessing) return;
 
     if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
       handleFilesAdded(Array.from(e.dataTransfer.files));
@@ -191,6 +218,7 @@ function ToolWorkspaceInner({ tool }) {
   };
 
   const handleRemoveFile = (indexToRemove) => {
+    if (isProcessing) return;
     setSelectedFiles((prev) => prev.filter((_, idx) => idx !== indexToRemove));
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -198,8 +226,10 @@ function ToolWorkspaceInner({ tool }) {
   };
 
   const handleClearAll = () => {
+    if (isProcessing) return;
     setSelectedFiles([]);
     setAlerts([]);
+    resetProcessing();
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -246,7 +276,7 @@ function ToolWorkspaceInner({ tool }) {
         </div>
       </div>
 
-      {/* Accessible Notifications / Alert Area */}
+      {/* Accessible Notifications / Input Alert Area */}
       {alerts.length > 0 && (
         <div
           role="region"
@@ -288,6 +318,76 @@ function ToolWorkspaceInner({ tool }) {
         </div>
       )}
 
+      {/* Processing Error Banner */}
+      {processingError && status === 'error' && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="glass-panel p-4 mb-6 border border-status-danger/40 bg-status-danger/10 rounded-xl flex items-start justify-between gap-3 text-status-danger text-xs sm:text-sm"
+        >
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" aria-hidden="true" />
+            <div>
+              <p className="font-bold">Processing Error</p>
+              <p className="mt-0.5 opacity-90">{processingError}</p>
+            </div>
+          </div>
+          <GlassButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={resetProcessing}
+            className="text-status-danger hover:bg-status-danger/20 shrink-0"
+          >
+            Dismiss
+          </GlassButton>
+        </div>
+      )}
+
+      {/* Processing In-Flight Status Announcement */}
+      {isProcessing && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="glass-panel p-4 mb-6 border border-accent/30 bg-accent/10 rounded-xl flex items-center gap-3 text-accent text-xs sm:text-sm font-semibold"
+        >
+          <div className="h-4 w-4 rounded-full border-2 border-accent border-t-transparent animate-spin shrink-0" />
+          <span>Processing document in your local browser sandbox...</span>
+        </div>
+      )}
+
+      {/* Successful Output & Download Banner */}
+      {result && status === 'success' && (
+        <div className="glass-panel p-5 sm:p-6 mb-8 border border-status-success/30 bg-status-success/5 rounded-2xl">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-10 w-10 rounded-xl bg-status-success/15 flex items-center justify-center text-status-success shrink-0">
+                <CheckCircle2 className="h-6 w-6" aria-hidden="true" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="font-heading font-bold text-sm sm:text-base text-primary">
+                  Ready for Download
+                </h2>
+                <p className="text-xs text-secondary mt-0.5 truncate">
+                  {result.filename} • {formatFileSize(result.blob.size)}
+                </p>
+              </div>
+            </div>
+
+            <GlassButton
+              type="button"
+              variant="primary"
+              size="md"
+              icon={Download}
+              onClick={downloadResult}
+              className="w-full sm:w-auto"
+            >
+              Download {result.filename}
+            </GlassButton>
+          </div>
+        </div>
+      )}
+
       {/* Drag-and-Drop Local File Selection Area */}
       <div
         role="region"
@@ -298,7 +398,7 @@ function ToolWorkspaceInner({ tool }) {
         onDrop={handleDrop}
         className={`glass-dropzone p-8 sm:p-12 text-center transition-all ${
           isDragging ? 'is-dragging' : ''
-        }`}
+        } ${isProcessing ? 'opacity-60 cursor-not-allowed' : ''}`}
       >
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/10 text-accent">
           <Upload className="h-7 w-7" aria-hidden="true" />
@@ -316,6 +416,7 @@ function ToolWorkspaceInner({ tool }) {
           ref={fileInputRef}
           id={`file-input-${tool.id}`}
           type="file"
+          disabled={isProcessing}
           className="sr-only"
           accept={acceptedInputAttr}
           multiple={tool.multiple}
@@ -328,6 +429,7 @@ function ToolWorkspaceInner({ tool }) {
             type="button"
             variant="primary"
             size="md"
+            disabled={isProcessing}
             icon={Upload}
             onClick={() => fileInputRef.current?.click()}
           >
@@ -368,6 +470,7 @@ function ToolWorkspaceInner({ tool }) {
               variant="ghost"
               size="sm"
               icon={Trash2}
+              disabled={isProcessing}
               onClick={handleClearAll}
               className="text-secondary hover:text-status-danger"
             >
@@ -411,6 +514,7 @@ function ToolWorkspaceInner({ tool }) {
                     variant="ghost"
                     size="sm"
                     icon={X}
+                    disabled={isProcessing}
                     onClick={() => handleRemoveFile(idx)}
                     aria-label={`Remove ${file.name}`}
                     className="min-h-[44px] min-w-[44px] text-secondary hover:text-status-danger p-2 shrink-0"
@@ -428,7 +532,7 @@ function ToolWorkspaceInner({ tool }) {
         </div>
       )}
 
-      {/* Action Dock / Processing Placeholder */}
+      {/* Action Dock / Processing Section */}
       <div className="glass-panel p-6 sm:p-8 mt-8 border-t border-border-subtle">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <div>
@@ -436,8 +540,14 @@ function ToolWorkspaceInner({ tool }) {
               {tool.name} Processing
             </h3>
             <p className="text-xs text-secondary mt-0.5">
-              {selectedFiles.length === 0
-                ? `Select ${tool.multiple ? 'files' : 'a file'} above to enable workspace processing.`
+              {!isInputReady
+                ? minFiles > 1
+                  ? `Select at least ${minFiles} files to enable ${actionLabel.toLowerCase()}.`
+                  : `Select a file above to enable workspace processing.`
+                : isProcessing
+                ? `Processing ${selectedFiles.length} ${
+                    selectedFiles.length === 1 ? 'file' : 'files'
+                  } in local browser sandbox...`
                 : `${selectedFiles.length} ${
                     selectedFiles.length === 1 ? 'file' : 'files'
                   } loaded (${formatFileSize(totalSize)}). Ready for client-side processing.`}
@@ -448,22 +558,34 @@ function ToolWorkspaceInner({ tool }) {
             type="button"
             variant="primary"
             size="lg"
-            disabled={true}
-            icon={Lock}
+            isLoading={isProcessing}
+            disabled={!isProcessorAvailable || !isInputReady || isProcessing}
+            icon={!isProcessorAvailable ? Lock : undefined}
+            onClick={executeProcessing}
             className="w-full sm:w-auto"
           >
-            {actionLabel}
+            {isProcessing ? 'Processing...' : actionLabel}
           </GlassButton>
         </div>
 
-        {/* Explanatory Placeholder Notice (Zero Fake Progress/Downloads) */}
-        <div className="surface-opaque mt-4 rounded-xl border border-border-subtle p-3.5 flex items-start gap-3 text-xs text-secondary">
-          <Clock className="h-4 w-4 text-accent shrink-0 mt-0.5" aria-hidden="true" />
-          <div>
-            <span className="font-semibold text-primary">Processing Engine Placeholder: </span>
-            The in-browser processing engine (PDF.js rendering and pdf-lib document manipulation) is scheduled for upcoming implementation. Your files remain exclusively in local browser memory and are never uploaded to any external server.
+        {/* Dynamic Sandbox or Implementation Notice */}
+        {!isProcessorAvailable ? (
+          <div className="surface-opaque mt-4 rounded-xl border border-border-subtle p-3.5 flex items-start gap-3 text-xs text-secondary">
+            <Clock className="h-4 w-4 text-accent shrink-0 mt-0.5" aria-hidden="true" />
+            <div>
+              <span className="font-semibold text-primary">Processing Engine Placeholder: </span>
+              The in-browser processing engine (PDF.js rendering and pdf-lib document manipulation) is scheduled for upcoming implementation. Your files remain exclusively in local browser memory and are never uploaded to any external server.
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="surface-opaque mt-4 rounded-xl border border-border-subtle p-3.5 flex items-start gap-3 text-xs text-secondary">
+            <ShieldCheck className="h-4 w-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+            <div>
+              <span className="font-semibold text-primary">Local Sandbox Execution: </span>
+              Processing executes exclusively inside your local browser memory sandbox. No document data or metadata is ever transmitted across the network.
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -472,8 +594,9 @@ function ToolWorkspaceInner({ tool }) {
 /**
  * Top-level Tool Workspace page container.
  * Resolves tool metadata and uses key={activeSlug} to reset inner state upon route switching.
+ * Accepts processorAdapterOverride for test-only dependency injection.
  */
-export default function ToolWorkspace({ slugOverride }) {
+export default function ToolWorkspace({ slugOverride, processorAdapterOverride }) {
   const { slug } = useParams();
   const activeSlug = slugOverride || slug;
   const tool = getToolBySlug(activeSlug);
@@ -482,5 +605,11 @@ export default function ToolWorkspace({ slugOverride }) {
     return <NotFound />;
   }
 
-  return <ToolWorkspaceInner key={activeSlug} tool={tool} />;
+  return (
+    <ToolWorkspaceInner
+      key={activeSlug}
+      tool={tool}
+      processorAdapterOverride={processorAdapterOverride}
+    />
+  );
 }

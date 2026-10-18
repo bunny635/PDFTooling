@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider, MemoryRouter } from 'react-router-dom';
 import { routes } from '../app/router.jsx';
@@ -336,5 +336,128 @@ describe('ToolWorkspace Component', () => {
     // The previously uploaded file in Merge PDF must be cleanly reset and unmounted
     expect(screen.queryByText('merge-doc.pdf')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { level: 2, name: /Selected File/i })).not.toBeInTheDocument();
+  });
+
+  describe('WS-02 Processing Lifecycle & Infrastructure', () => {
+    it('displays minimum file requirement advisory in action dock for merge-pdf', async () => {
+      const { user } = renderWorkspace('/tools/merge-pdf');
+
+      // Initially with 0 files
+      expect(
+        screen.getByText(/Select at least 2 files to enable merge pdfs\./i)
+      ).toBeInTheDocument();
+
+      // Upload 1 file
+      const file1 = new File(['file-one'], 'one.pdf', { type: 'application/pdf', lastModified: 1710000000200 });
+      await user.upload(screen.getByLabelText(/Select files for Merge PDF/i), file1);
+
+      // Still requires 2 files
+      expect(
+        screen.getByText(/Select at least 2 files to enable merge pdfs\./i)
+      ).toBeInTheDocument();
+
+      // Upload second file
+      const file2 = new File(['file-two'], 'two.pdf', { type: 'application/pdf', lastModified: 1710000000201 });
+      await user.upload(screen.getByLabelText(/Select files for Merge PDF/i), file2);
+
+      // Minimum satisfied: 2 files loaded, ready for processing, but processor unavailable in prod
+      expect(
+        screen.getByText(/2 files loaded .* Ready for client-side processing\./i)
+      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Merge PDFs/i })).toBeDisabled();
+      expect(screen.getByText(/Processing Engine Placeholder/i)).toBeInTheDocument();
+    });
+
+    it('enables processing, locks controls, and displays download result with injected mock processor', async () => {
+      const user = userEvent.setup();
+      let resolveMock;
+      const delayedPromise = new Promise((resolve) => {
+        resolveMock = resolve;
+      });
+
+      const mockAdapter = {
+        id: 'split-pdf',
+        isAvailable: true,
+        execute: vi.fn().mockImplementation(() => delayedPromise),
+      };
+
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="split-pdf" processorAdapterOverride={mockAdapter} />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const file = new File(['source'], 'original.pdf', { type: 'application/pdf', lastModified: 1710000000210 });
+      const fileInput = screen.getByLabelText(/Select file for Split PDF/i);
+      await user.upload(fileInput, file);
+
+      // Action button should now be enabled because processor is available and input is ready
+      const processButton = screen.getByRole('button', { name: /Split PDF/i });
+      expect(processButton).not.toBeDisabled();
+
+      // Click to start processing
+      await user.click(processButton);
+
+      // Processing state active: button shows loading, controls are disabled
+      expect(screen.getByText(/Processing document in your local browser sandbox/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Select File/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Clear All/i })).toBeDisabled();
+      expect(screen.getByRole('button', { name: /Remove original.pdf/i })).toBeDisabled();
+
+      // Resolve the processing
+      const outputBlob = new Blob(['%PDF-1.4 merged result'], { type: 'application/pdf' });
+      await act(async () => {
+        resolveMock({
+          blob: outputBlob,
+          suggestedFilename: 'extracted-pages.pdf',
+          mimeType: 'application/pdf',
+        });
+      });
+
+      // Successful completion: Download banner appears
+      expect(screen.getByRole('heading', { level: 2, name: /Ready for Download/i })).toBeInTheDocument();
+      expect(screen.getAllByText(/extracted-pages\.pdf/i).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByRole('button', { name: /Download extracted-pages\.pdf/i })).toBeInTheDocument();
+
+      // Clear all resets state and removes download card
+      await user.click(screen.getByRole('button', { name: /Clear All/i }));
+      expect(screen.queryByText(/Ready for Download/i)).not.toBeInTheDocument();
+    });
+
+    it('displays accessible error banner on processor failure and allows dismissal', async () => {
+      const user = userEvent.setup();
+      const mockAdapter = {
+        id: 'rotate-pdf',
+        isAvailable: true,
+        execute: vi.fn().mockRejectedValue(new Error('Corrupt PDF trailer syntax.')),
+      };
+
+      render(
+        <ThemeProvider>
+          <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <ToolWorkspace slugOverride="rotate-pdf" processorAdapterOverride={mockAdapter} />
+          </MemoryRouter>
+        </ThemeProvider>
+      );
+
+      const file = new File(['bad'], 'corrupt.pdf', { type: 'application/pdf', lastModified: 1710000000220 });
+      await user.upload(screen.getByLabelText(/Select file for Rotate PDF/i), file);
+
+      const actionButton = screen.getByRole('button', { name: /Rotate PDF/i });
+      expect(actionButton).not.toBeDisabled();
+
+      await user.click(actionButton);
+
+      // Accessible error banner should be displayed
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(screen.getByText('Processing Error')).toBeInTheDocument();
+      expect(screen.getByText('Corrupt PDF trailer syntax.')).toBeInTheDocument();
+
+      // Dismissing error clears the banner
+      await user.click(screen.getByRole('button', { name: /Dismiss/i }));
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    });
   });
 });

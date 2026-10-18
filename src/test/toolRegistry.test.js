@@ -33,6 +33,8 @@ describe('toolRegistry', () => {
       expect(tool.category).toBeTruthy();
       expect(Array.isArray(tool.acceptedMimeTypes)).toBe(true);
       expect(typeof tool.multiple).toBe('boolean');
+      expect(typeof tool.minFiles).toBe('number');
+      expect(tool.minFiles).toBeGreaterThanOrEqual(1);
     });
   });
 
