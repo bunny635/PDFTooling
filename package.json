@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "clsx": "^2.1.1",
+    "fflate": "0.8.3",
     "lucide-react": "^0.460.0",
     "motion": "^11.11.17",
     "pdf-lib": "^1.17.1",
